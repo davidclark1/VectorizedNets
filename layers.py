@@ -6,21 +6,23 @@ import torch.optim as optim
 import torch.nn.functional as F
 
 class VectorizedLayer(nn.Module):
-    def __init__(self, in_features, out_features, category_dim, nonneg=False, nonlin=True, expanded_input=False):
+    def __init__(self, category_dim, in_features, out_features,
+                 nonneg=False, nonlin=True, expanded_input=False,
+                 device="cpu"):
         super(VectorizedLayer, self).__init__()
         k = 1. / np.sqrt(in_features)
         if expanded_input:
             k = 1. / np.sqrt(in_features / category_dim)
         k = k * 0.25
-        self.weight = nn.Parameter(torch.zeros(out_features, in_features))
+        self.weight = nn.Parameter(torch.zeros(out_features, in_features, device=device))
         with torch.no_grad():
             if nonneg: self.weight.uniform_(0, k)
             else: self.weight.uniform_(-k, k)
-        self.bias = nn.Parameter(torch.zeros(category_dim, out_features))
+        self.bias = nn.Parameter(torch.zeros(category_dim, out_features, device=device))
         self.nonneg = nonneg
         self.nonlin = nonlin
-        self.mask_weights = torch.randint(0, 2, (category_dim, out_features))*2 - 1
-        #self.mask_weights = torch.ones(category_dim, out_features)
+        self.mask_weights = torch.randint(0, 2, (category_dim, out_features), device=device)*2 - 1
+        #self.mask_weights = torch.ones(category_dim, out_features, device=device)
         #for i in range(out_features):
         #    if np.random.rand() < 0.5:
         #        self.mask_weights[:, i] = -1
@@ -33,7 +35,7 @@ class VectorizedLayer(nn.Module):
             self.mask = mask
             h = h * mask[:, None, :]
         else:
-            self.mask = torch.ones(h.shape[0], h.shape[2])
+            self.mask = torch.ones(h.shape[0], h.shape[2], device=input.device)
         return h
     
     def update(self, error, eta):
@@ -71,6 +73,53 @@ class VectorizedLayer(nn.Module):
         if self.nonneg:
             with torch.no_grad():
                 self.weight.clamp_(min=0)
+
+class ConvVectorizedLayer(nn.Module):
+    def __init__(self, category_dim, in_channels, out_channels, kernel_size, stride=1,
+                 pool=True, pool_kernel_size=2, pool_stride=2,
+                 nonneg=False, nonlin=True, expanded_input=False, device="cpu"):
+        super(ConvVectorizedLayer, self).__init__()
+        
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding=1, bias=False).to(device)
+        
+        k = 1. / (in_channels * np.prod(kernel_size))
+        if expanded_input:
+            k = k * category_dim
+        with torch.no_grad():
+            if nonneg: self.conv.weight.uniform_(0, np.sqrt(k))
+            else: self.conv.weight.uniform_(-np.sqrt(k), np.sqrt(k))
+        self.bias = nn.Parameter(torch.zeros(category_dim, out_channels, device=device))
+        
+        if pool:
+            self.avgpool = nn.AvgPool2d(kernel_size=pool_kernel_size, stride=pool_stride).to(device)
+        
+        self.pool = pool
+        self.nonneg = nonneg
+        self.nonlin = nonlin
+        
+    def forward(self, input):
+        #(batch_dim, category_dim, channels, width, height)
+        input_reshaped = input.view((input.shape[0]*input.shape[1],) + input.shape[2:])
+        conv_out = self.conv(input_reshaped)
+        saved_shape = conv_out.shape
+        conv_out = conv_out.view((input.shape[0], input.shape[1]) + conv_out.shape[1:]) #?
+        conv_out = conv_out + self.bias[None, :, :, None, None]
+        if self.nonlin:
+            conv_out_sum = conv_out.sum(dim=1).detach()
+            mask = (conv_out_sum > 0.).float()
+            conv_out = conv_out * mask[:, None, :, :, :]
+        if self.pool:
+            conv_out = conv_out.view(saved_shape)
+            conv_out = self.avgpool(conv_out)
+            conv_out = conv_out.view((input.shape[0], input.shape[1]) + conv_out.shape[1:])
+        return conv_out
+    
+    def post_step_callback(self):
+        if self.nonneg:
+            with torch.no_grad():
+                self.conv.weight.clamp_(min=0)
+                
+
                 
 def expand_input(input, category_dim):
     batch_dim, input_dim = input.shape
