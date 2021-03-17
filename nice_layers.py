@@ -67,6 +67,31 @@ class Flatten(nn.Module):
     def post_step_callback(self):
         pass
 
+def convolutional_outer_product(x1, x2, kernel_size):
+    #assumes stride, padding, dilation are all defaults!
+    #x1 = (batch_size, in_channels, h_in, w_in)
+    #x2 = (batch_size, out_channels, h_out, w_out)
+    #out = (batch_size, out_chanels, in_channels, kernel_size, kernel_size)
+    
+    batch_size = x1.shape[0]
+    if x2.shape[0] != batch_size:
+        raise ValueError("x1 and x2 must have the same batch size")
+    in_channels = x1.shape[1]
+    out_channels = x2.shape[1]
+    h_in, w_in = x1.shape[2:]
+    h_out, w_out = x2.shape[2:]
+    
+    w_out_expected = w_in - kernel_size + 1
+    h_out_expected = h_in - kernel_size + 1
+    if (h_out_expected != h_out) or (w_out_expected != w_out):
+        raise ValueError("invalid kernel size")
+
+    x1_prime = x1.permute(1, 0, 2, 3)
+    x2_prime = x2.view(batch_size*out_channels, h_out, w_out).unsqueeze(1)
+    out_prime = F.conv2d(input=x1_prime, weight=x2_prime, groups=batch_size)
+    out = out_prime.view(in_channels, batch_size, out_channels, kernel_size, kernel_size).permute(1, 2, 0, 3, 4)
+    return out
+
 class Conv2d(nn.Module):
     def __init__(self, category_dim, in_channels, out_channels, kernel_size, nonneg=False, expanded_input=False, device="cpu", **conv_params):
             super().__init__()
@@ -91,7 +116,8 @@ class Conv2d(nn.Module):
             self.bias = nn.Parameter(torch.zeros(category_dim, out_channels, device=device))
 
     def forward(self, input):
-        #(batch_dim, category_dim, channels, width, height)
+        #input = (batch_dim, category_dim, channels, width, height)
+        self.input = input.detach()
         batch_size, category_dim = input.shape[:2]
         CWH = input.shape[2:]
         input_reshaped = input.view((batch_size*category_dim,) + CWH)
@@ -104,6 +130,23 @@ class Conv2d(nn.Module):
         if self.nonneg:
             with torch.no_grad():
                 self.conv.weight.clamp_(min=0)
+
+    def set_grad(self, activation_mask, output_error):
+        #activation_mask = (batch_size, out_channels, h_out, w_out)
+        #output_error = (batch_size, category_dim)
+        activation_mask = activation_mask.detach()
+        if activation_mask.dtype != torch.float:
+            activation_mask = activation_mask.float()
+        output_error = output_error.detach()
+        x1 = torch.einsum("bkchw,bk->bchw", self.input, output_error)
+        x2 = activation_mask
+        outer = convolutional_outer_product(x1, x2)
+        delta_W = outer.mean(dim=0)
+
+        
+
+
+
 
 class AvgPool2d(nn.Module):
     def __init__(self, kernel_size, **pool_params):
