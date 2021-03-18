@@ -13,6 +13,7 @@ class Linear(nn.Module):
         self.expanded_input = expanded_input
         self.device = device
         k = 1. / in_features
+        k *= 0.2
         if expanded_input:
             k = k * category_dim
         self.weight = nn.Parameter(torch.FloatTensor(out_features, in_features, device=device))
@@ -24,14 +25,37 @@ class Linear(nn.Module):
         self.bias = nn.Parameter(torch.zeros(category_dim, out_features, device=device))
 
     def forward(self, input):
+        self.input = input.detach()
         output = torch.matmul(input, self.weight.T) + self.bias
+        self.mask_shape = (output.shape[0],) + output.shape[2:]
         return output
 
     def post_step_callback(self):
         if self.nonneg:
             with torch.no_grad():
-                self.weight.clamp_(min=0)
+                #self.weight.clamp_(min=0)
+                self.weight.abs_()
+                #self.weight[:] = F.softplus(self.weight[:])
 
+    def set_grad(self, activation_mask, output_error):
+        #i = batch dim
+        #j = category dim
+        #n = input feature dim
+        #m = output feature dim
+        activation_mask = activation_mask.detach()
+        output_error = output_error.detach()
+        dot_prods = torch.einsum("ijn,ij->in", self.input, output_error)
+        delta_W = torch.einsum("im,in->mn", activation_mask, dot_prods) / len(self.input)
+        delta_b = torch.einsum("ij,im->jm", output_error, activation_mask) / len(self.input)
+        with torch.no_grad():
+            if self.weight.grad is None:
+                self.weight.grad = delta_W
+            else:
+                self.weight.grad += delta_W
+            if self.bias.grad is None:
+                self.bias.grad = delta_b
+            else:
+                self.bias.grad += delta_b
 
 class tReLU(nn.Module):
     def __init__(self):
@@ -43,6 +67,7 @@ class tReLU(nn.Module):
             self.t = torch.randint(0, 2, input.shape[1:], device=input.device).float()*2 - 1
             print("Instantiated t with shape {}".format(tuple(self.t.shape)))
         mask = ((input.detach() * self.t[None]).sum(dim=1) >= 0.).float()
+        self.mask = mask
         output = input * mask[:, None]
         return output
 
@@ -53,6 +78,7 @@ class tReLU(nn.Module):
 class ReLU(nn.Module):
     def forward(self, input):
         mask = (input.detach().sum(dim=1) >= 0.).float()
+        self.mask = mask
         output = input * mask[:, None]
         return output
 
@@ -108,6 +134,7 @@ class Conv2d(nn.Module):
                 k = k * groups
             if expanded_input:
                 k = k * category_dim
+            k *= 0.2
             with torch.no_grad():
                 if nonneg:
                     self.conv.weight.uniform_(0, np.sqrt(k))
@@ -124,14 +151,17 @@ class Conv2d(nn.Module):
         output_reshaped = self.conv(input_reshaped)
         output = output_reshaped.view((batch_size, category_dim) + output_reshaped.shape[1:])
         output = output + self.bias[None, :, :, None, None]
+        self.mask_shape = (output.shape[0],) + output.shape[2:]
         return output
     
     def post_step_callback(self):
         if self.nonneg:
             with torch.no_grad():
-                self.conv.weight.clamp_(min=0)
+                #self.conv.weight.clamp_(min=0)
+                self.conv.weight.abs_()
+                #self.conv.weight[:] = F.softplus(self.conv.weight[:])
 
-    def set_grad(self, activation_mask, output_error):
+    def set_grad(self, activation_mask, output_error, pool_kernel_size=2):
         #activation_mask = (batch_size, out_channels, h_out, w_out)
         #output_error = (batch_size, category_dim)
         activation_mask = activation_mask.detach()
@@ -140,13 +170,18 @@ class Conv2d(nn.Module):
         output_error = output_error.detach()
         x1 = torch.einsum("bkchw,bk->bchw", self.input, output_error)
         x2 = activation_mask
-        outer = convolutional_outer_product(x1, x2)
-        delta_W = outer.mean(dim=0)
-
-        
-
-
-
+        outer = convolutional_outer_product(x1, x2, self.kernel_size)
+        delta_W = outer.mean(dim=0) / pool_kernel_size**2
+        delta_b = torch.ones(self.bias.shape, device=self.bias.device) * output_error.mean(dim=0)[:, None]
+        with torch.no_grad():
+            if self.conv.weight.grad is None:
+                self.conv.weight.grad = delta_W
+            else:
+                self.conv.weight.grad += delta_W
+            if self.bias.grad is None:
+                self.bias.grad = delta_b
+            else:
+                self.bias.grad += delta_b
 
 class AvgPool2d(nn.Module):
     def __init__(self, kernel_size, **pool_params):
