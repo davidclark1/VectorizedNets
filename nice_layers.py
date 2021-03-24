@@ -13,9 +13,9 @@ class Linear(nn.Module):
         self.expanded_input = expanded_input
         self.device = device
         k = 1. / in_features
-        k *= 0.2
         if expanded_input:
             k = k * category_dim
+        #k = k * 0.2
         self.weight = nn.Parameter(torch.FloatTensor(out_features, in_features, device=device))
         with torch.no_grad():
             if nonneg:
@@ -33,8 +33,8 @@ class Linear(nn.Module):
     def post_step_callback(self):
         if self.nonneg:
             with torch.no_grad():
-                #self.weight.clamp_(min=0)
-                self.weight.abs_()
+                self.weight.clamp_(min=0)
+                #self.weight.abs_()
                 #self.weight[:] = F.softplus(self.weight[:])
 
     def set_grad(self, activation_mask, output_error):
@@ -87,18 +87,31 @@ class ReLU(nn.Module):
 
 class Flatten(nn.Module):
     def forward(self, input):
+        #print("Here")
         #(batch, cat, channels, width, height)
         input_reshaped = input.view(input.shape[:2] + (np.prod(input.shape[2:]),))
         return input_reshaped
     def post_step_callback(self):
         pass
 
-def convolutional_outer_product(x1, x2, kernel_size):
+class BatchNorm2d(nn.Module):
+    def __init__(self, num_features):
+        super().__init__()
+        self.bn = nn.BatchNorm2d(num_features)
+    def forward(self, input):
+        input_reshaped = input.view((input.shape[0]*input.shape[1],) + input.shape[2:])
+        output_reshaped = self.bn(input_reshaped)
+        output = output_reshaped.view(input.shape)
+        return output
+    def post_step_callback(self):
+        pass
+
+
+def convolutional_outer_product(x1, x2, kernel_size, stride=1):
     #assumes stride, padding, dilation are all defaults!
     #x1 = (batch_size, in_channels, h_in, w_in)
     #x2 = (batch_size, out_channels, h_out, w_out)
     #out = (batch_size, out_chanels, in_channels, kernel_size, kernel_size)
-    
     batch_size = x1.shape[0]
     if x2.shape[0] != batch_size:
         raise ValueError("x1 and x2 must have the same batch size")
@@ -106,15 +119,14 @@ def convolutional_outer_product(x1, x2, kernel_size):
     out_channels = x2.shape[1]
     h_in, w_in = x1.shape[2:]
     h_out, w_out = x2.shape[2:]
-    
-    w_out_expected = w_in - kernel_size + 1
-    h_out_expected = h_in - kernel_size + 1
-    if (h_out_expected != h_out) or (w_out_expected != w_out):
-        raise ValueError("invalid kernel size")
-
+    #w_out_expected = w_in - kernel_size + 1
+    #h_out_expected = h_in - kernel_size + 1
+    #if (h_out_expected != h_out) or (w_out_expected != w_out):
+    #    raise ValueError("invalid kernel size")
     x1_prime = x1.permute(1, 0, 2, 3)
     x2_prime = x2.view(batch_size*out_channels, h_out, w_out).unsqueeze(1)
-    out_prime = F.conv2d(input=x1_prime, weight=x2_prime, groups=batch_size)
+    out_prime = F.conv2d(input=x1_prime, weight=x2_prime, groups=batch_size, dilation=stride, stride=1)
+    out_prime = out_prime[:, :, :kernel_size, :kernel_size]
     out = out_prime.view(in_channels, batch_size, out_channels, kernel_size, kernel_size).permute(1, 2, 0, 3, 4)
     return out
 
@@ -128,13 +140,17 @@ class Conv2d(nn.Module):
             self.nonneg = nonneg
             self.expanded_input = expanded_input
             self.device = device
+            if "stride" in conv_params.keys():
+                self.stride = conv_params["stride"]
+            else:
+                self.stride = 1
             self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, bias=False, **conv_params).to(device)
-            k = 1. / (in_channels * np.prod(kernel_size))
+            k = 1. / (in_channels * kernel_size**2) #np.prod(kernel_size))
             if "groups" in conv_params.keys():
                 k = k * groups
             if expanded_input:
                 k = k * category_dim
-            k *= 0.2
+            #k = k * 0.2
             with torch.no_grad():
                 if nonneg:
                     self.conv.weight.uniform_(0, np.sqrt(k))
@@ -157,11 +173,11 @@ class Conv2d(nn.Module):
     def post_step_callback(self):
         if self.nonneg:
             with torch.no_grad():
-                #self.conv.weight.clamp_(min=0)
-                self.conv.weight.abs_()
+                self.conv.weight.clamp_(min=0)
+                #self.conv.weight.abs_()
                 #self.conv.weight[:] = F.softplus(self.conv.weight[:])
 
-    def set_grad(self, activation_mask, output_error, pool_kernel_size=2):
+    def set_grad(self, activation_mask, output_error, pool_kernel_size=1):
         #activation_mask = (batch_size, out_channels, h_out, w_out)
         #output_error = (batch_size, category_dim)
         activation_mask = activation_mask.detach()
@@ -170,18 +186,23 @@ class Conv2d(nn.Module):
         output_error = output_error.detach()
         x1 = torch.einsum("bkchw,bk->bchw", self.input, output_error)
         x2 = activation_mask
-        outer = convolutional_outer_product(x1, x2, self.kernel_size)
+        outer = convolutional_outer_product(x1, x2, self.kernel_size, stride=self.stride)
+        #print(outer)
         delta_W = outer.mean(dim=0) / pool_kernel_size**2
-        delta_b = torch.ones(self.bias.shape, device=self.bias.device) * output_error.mean(dim=0)[:, None]
+        #print(delta_W.max())
+        #delta_W *= 0.
+        #delta_b = torch.ones(self.bias.shape, device=self.bias.device) * output_error.mean(dim=0)[:, None]
+        f = activation_mask.shape[-1]**2
+        delta_W /= f
         with torch.no_grad():
             if self.conv.weight.grad is None:
                 self.conv.weight.grad = delta_W
             else:
                 self.conv.weight.grad += delta_W
-            if self.bias.grad is None:
-                self.bias.grad = delta_b
-            else:
-                self.bias.grad += delta_b
+            #if self.bias.grad is None:
+            #    self.bias.grad = delta_b
+            #else:
+            #    self.bias.grad += delta_b
 
 class AvgPool2d(nn.Module):
     def __init__(self, kernel_size, **pool_params):
