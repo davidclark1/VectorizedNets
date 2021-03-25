@@ -3,6 +3,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+def expand_input_conv(input, category_dim):
+    #input = (batch, channels, width, height)
+    batch_size, in_channels = input.shape[:2]
+    expanded_input = torch.zeros((batch_size, category_dim, in_channels*category_dim) + input.shape[2:])
+    for i in range(category_dim):
+        expanded_input[:, i, i*in_channels:(i+1)*in_channels] = input
+    return expanded_input
+
 class Linear(nn.Module):
     def __init__(self, category_dim, in_features, out_features, nonneg=False, expanded_input=False, device="cpu"):
         super().__init__()
@@ -57,6 +65,12 @@ class Linear(nn.Module):
             else:
                 self.bias.grad += delta_b
 
+
+def init_t(t):
+    features = t.shape[1]
+    for i in range(features // 2):
+        t[:, 2*i + 1] = -t[:, 2*i]
+
 class tReLU(nn.Module):
     def __init__(self):
         super().__init__()
@@ -65,6 +79,7 @@ class tReLU(nn.Module):
     def forward(self, input):
         if self.t is None:
             self.t = torch.randint(0, 2, input.shape[1:], device=input.device).float()*2 - 1
+            init_t(self.t)
             #a = torch.rand(input.shape[1:], device=input.device)
             #self.t = (a == a.max(dim=0, keepdim=True)[0]).float()
             print("Instantiated t with shape {}".format(tuple(self.t.shape)))
@@ -91,7 +106,7 @@ class Flatten(nn.Module):
     def forward(self, input):
         #print("Here")
         #(batch, cat, channels, width, height)
-        input_reshaped = input.view(input.shape[:2] + (np.prod(input.shape[2:]),))
+        input_reshaped = input.permute(0, 1, 3, 4, 2).reshape(input.shape[:2] + (np.prod(input.shape[2:]),))
         return input_reshaped
     def post_step_callback(self):
         pass
@@ -132,25 +147,63 @@ def convolutional_outer_product(x1, x2, kernel_size, stride=1):
     out = out_prime.view(in_channels, batch_size, out_channels, kernel_size, kernel_size).permute(1, 2, 0, 3, 4)
     return out
 
+def init_conv_l0(weight, category_dim=1):
+    out_channels, in_channels, kernel_size = weight.shape[:3] #assumes square kernel
+    W_shape = weight.shape[1:]
+    for i in range(out_channels // 2):
+        W = torch.randn(W_shape) / np.sqrt((in_channels / category_dim) * kernel_size**2)
+        weight[2*i] = W
+        weight[2*i + 1] = -W
+
+def init_conv(weight):
+    out_channels, in_channels, kernel_size = weight.shape[:3] #assumes square kernel
+    W_shape = weight.shape[2:]
+    for i in range(out_channels // 2):
+        for j in range(in_channels // 2):
+            W = torch.randn(W_shape) / np.sqrt(0.25 * in_channels * kernel_size**2)
+            i1, i2 = i*2, i*2 + 1
+            j1, j2 = j*2, j*2 + 1
+            weight[i1, j1] = F.relu(W)
+            weight[i2, j2] = F.relu(W)
+            weight[i1, j2] = F.relu(-W)
+            weight[i2, j1] = F.relu(-W)
+                
 class Conv2d(nn.Module):
-    def __init__(self, category_dim, in_channels, out_channels, kernel_size, nonneg=False, expanded_input=False, device="cpu", **conv_params):
+    def __init__(self, category_dim, in_channels, out_channels, kernel_size, nonneg=False, first_layer=False, device="cpu", **conv_params):
             super().__init__()
             self.category_dim = category_dim
             self.in_channels = in_channels
             self.out_channels = out_channels
             self.kernel_size = kernel_size
             self.nonneg = nonneg
-            self.expanded_input = expanded_input
+            self.first_layer = first_layer
             self.device = device
             if "stride" in conv_params.keys():
                 self.stride = conv_params["stride"]
             else:
                 self.stride = 1
             self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, bias=False, **conv_params).to(device)
+            with torch.no_grad():
+                if first_layer and (not nonneg):
+                    print("A")
+                    init_conv_l0(self.conv.weight, category_dim=category_dim)
+                elif (not first_layer) and nonneg:
+                    print("B")
+                    init_conv(self.conv.weight)
+                elif not first_layer and not nonneg:
+                    print("C")
+                    #if first_layer:
+                    #self.conv.weight.normal_(0, 1./np.sqrt(0.5*in_channels*kernel_size**2))
+                    #else:
+                    self.conv.weight.normal_(0, 1./np.sqrt(0.5*(in_channels/category_dim)*kernel_size**2))
+                else:
+                    print("ERROR!")
+
+            """
             k = 1. / (in_channels * kernel_size**2) #np.prod(kernel_size))
             if "groups" in conv_params.keys():
                 k = k * groups
-            if expanded_input:
+            if first_layer:
                 k = k * category_dim
             #k = k * 0.2
             with torch.no_grad():
@@ -158,6 +211,9 @@ class Conv2d(nn.Module):
                     self.conv.weight.uniform_(0, np.sqrt(k))
                 else:
                     self.conv.weight.uniform_(-np.sqrt(k), np.sqrt(k))
+            """
+
+
             self.bias = nn.Parameter(torch.zeros(category_dim, out_channels, device=device))
 
     def forward(self, input):
