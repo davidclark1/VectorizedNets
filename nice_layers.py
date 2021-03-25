@@ -33,7 +33,7 @@ class Linear(nn.Module):
     def post_step_callback(self):
         if self.nonneg:
             with torch.no_grad():
-                self.weight.clamp_(min=0)
+                self.weight.clamp_(min=1e-3)
                 #self.weight.abs_()
                 #self.weight[:] = F.softplus(self.weight[:])
 
@@ -65,6 +65,8 @@ class tReLU(nn.Module):
     def forward(self, input):
         if self.t is None:
             self.t = torch.randint(0, 2, input.shape[1:], device=input.device).float()*2 - 1
+            #a = torch.rand(input.shape[1:], device=input.device)
+            #self.t = (a == a.max(dim=0, keepdim=True)[0]).float()
             print("Instantiated t with shape {}".format(tuple(self.t.shape)))
         mask = ((input.detach() * self.t[None]).sum(dim=1) >= 0.).float()
         self.mask = mask
@@ -173,7 +175,7 @@ class Conv2d(nn.Module):
     def post_step_callback(self):
         if self.nonneg:
             with torch.no_grad():
-                self.conv.weight.clamp_(min=0)
+                self.conv.weight.clamp_(min=1e-3)
                 #self.conv.weight.abs_()
                 #self.conv.weight[:] = F.softplus(self.conv.weight[:])
 
@@ -191,18 +193,18 @@ class Conv2d(nn.Module):
         delta_W = outer.mean(dim=0) / pool_kernel_size**2
         #print(delta_W.max())
         #delta_W *= 0.
-        #delta_b = torch.ones(self.bias.shape, device=self.bias.device) * output_error.mean(dim=0)[:, None]
-        f = activation_mask.shape[-1]**2
-        delta_W /= f
+        delta_b = torch.ones(self.bias.shape, device=self.bias.device) * output_error.mean(dim=0)[:, None]
+        #f = activation_mask.shape[-1]**2
+        #delta_W /= f
         with torch.no_grad():
             if self.conv.weight.grad is None:
                 self.conv.weight.grad = delta_W
             else:
                 self.conv.weight.grad += delta_W
-            #if self.bias.grad is None:
-            #    self.bias.grad = delta_b
-            #else:
-            #    self.bias.grad += delta_b
+            if self.bias.grad is None:
+                self.bias.grad = delta_b
+            else:
+                self.bias.grad += delta_b
 
 class AvgPool2d(nn.Module):
     def __init__(self, kernel_size, **pool_params):
