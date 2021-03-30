@@ -23,7 +23,7 @@ def init_linear(weight, first_layer=False, mono=False):
         return init_linear_mono(weight, first_layer)
     weight *= 0.
     out_features, in_features = weight.shape
-    f = 1 if first_layer else 0.5
+    f = 1. if first_layer else 0.5
     weight.normal_(0., 1./np.sqrt(f * in_features))
 
 def init_linear_mono(weight, first_layer):
@@ -31,22 +31,19 @@ def init_linear_mono(weight, first_layer):
         return init_linear_mono_l0(weight)
     weight *= 0.
     out_features, in_features = weight.shape
-    for i in range(max(out_features // 2, 1)):
-        W = torch.randn(in_features // 2) / np.sqrt(0.25 * in_features)
-        weight[2*i, ::2] = F.relu(W)
-        weight[2*i, 1::2] = F.relu(-W)
-        if out_features == 1:
-            break
-        weight[2*i + 1, 1::2] = F.relu(W)
-        weight[2*i + 1, ::2] = F.relu(-W)
+    W = torch.randn(max(out_features//2, 1), in_features//2) / np.sqrt(0.25 * in_features)
+    weight[::2, ::2] = F.relu(W)
+    weight[::2, 1::2] = F.relu(-W)
+    if W.shape[0] > 1:
+        weight[1::2, 1::2] = F.relu(W)
+        weight[1::2, ::2] = F.relu(-W)
 
 def init_linear_mono_l0(weight):
     weight *= 0.
     out_features, in_features = weight.shape
-    for i in range(out_features // 2):
-        W = torch.randn(in_features) / np.sqrt(in_features)
-        weight[2*i] = W
-        weight[2*i+1] = -W
+    W = torch.randn(out_features//2, in_features) / np.sqrt(in_features)
+    weight[::2] = W
+    weight[1::2] = -W
 
 def init_conv(weight, first_layer=False, mono=False):
     if mono:
@@ -61,25 +58,19 @@ def init_conv_mono(weight, first_layer):
         return init_conv_mono_l0(weight)
     weight *= 0.
     out_channels, in_channels, kernel_size = weight.shape[:3] #assumes square kernel
-    filter_shape_2d = weight.shape[2:]
-    for i in range(out_channels // 2):
-        for j in range(in_channels // 2):
-            W = torch.randn(filter_shape_2d) / np.sqrt(0.25 * in_channels * kernel_size**2)
-            i1, i2 = i*2, i*2 + 1
-            j1, j2 = j*2, j*2 + 1
-            weight[i1, j1] = F.relu(W)
-            weight[i2, j2] = F.relu(W)
-            weight[i1, j2] = F.relu(-W)
-            weight[i2, j1] = F.relu(-W)
+    W = torch.randn(out_channels//2, in_channels//2, kernel_size, kernel_size) / np.sqrt(0.25 * in_channels * kernel_size**2)
+    weight[::2, ::2] = F.relu(W)
+    weight[::2, 1::2] = F.relu(-W)
+    weight[1::2, 1::2] = F.relu(W)
+    weight[1::2, ::2] = F.relu(-W)
 
 def init_conv_mono_l0(weight):
     weight *= 0.
     out_channels, in_channels, kernel_size = weight.shape[:3] #assumes square kernel
     filter_shape_3d = weight.shape[1:]
-    for i in range(out_channels // 2):
-        W = torch.randn(filter_shape_3d) / np.sqrt(in_channels * kernel_size**2)
-        weight[2*i] = W
-        weight[2*i + 1] = -W
+    W = torch.randn((out_channels//2,) + filter_shape_3d) / np.sqrt(in_channels * kernel_size**2)
+    weight[::2] = W
+    weight[1::2] = -W
 
 class Linear(nn.Module):
     def __init__(self, category_dim, in_features, out_features, first_layer=False, mono=False, device="cpu"):
@@ -185,7 +176,6 @@ class BatchNorm2d(nn.Module):
     def post_step_callback(self):
         pass
 
-
 def convolutional_outer_product(x1, x2, kernel_size, stride=1):
     #assumes stride, padding, dilation are all defaults!
     #x1 = (batch_size, in_channels, h_in, w_in)
@@ -206,11 +196,12 @@ def convolutional_outer_product(x1, x2, kernel_size, stride=1):
     #    raise ValueError("invalid kernel size")
     x1_prime = x1.permute(1, 0, 2, 3)
     x2_prime = x2.view(batch_size*out_channels, h_out, w_out).unsqueeze(1)
+    #out_prime = F.conv2d(input=x1_prime, weight=x2_prime, groups=batch_size, dilation=stride, stride=1)
     out_prime = F.conv2d(input=x1_prime, weight=x2_prime, groups=batch_size, dilation=stride, stride=1)
     out_prime = out_prime[:, :, :kernel_size, :kernel_size]
+    #out_prime = torch.Tensor(np.copy(out_prime.cpu().detach().numpy()[:, :, ::-1][:, :, :, ::-1])).to(out_prime.device)
     out = out_prime.view(in_channels, batch_size, out_channels, kernel_size, kernel_size).permute(1, 2, 0, 3, 4)
     return out
-
 
 
 class Conv2d(nn.Module):
@@ -326,6 +317,7 @@ def set_model_grads(model, output, labels):
         if layer.__class__.__name__ in ('Conv2d', 'Linear'):
             #print("Here")
             if (i < len(model) - 1) and (model[i + 1].__class__.__name__ in ('ReLU', 'tReLU')):
+                print(i, "get mask")
                 mask = model[i + 1].mask
             else:
                 mask = torch.ones(layer.mask_shape, device=output.device)
