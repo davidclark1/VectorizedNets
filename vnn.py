@@ -371,3 +371,47 @@ def set_model_grads(model, output, labels):
             else:
                 mask = torch.ones(layer.mask_shape, device=output.device)
             layer.set_grad(mask, output_error)
+
+#do non-vectorized version first
+
+class Local2d(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, h_in, w_in, stride=1, padding=0, bias=True):
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.h_in = h_in
+        self.w_in = w_in
+        self.stride = stride
+        self.padding = padding
+        self.has_bias = bias
+        h_out = int(np.floor(((h_in + 2*padding - kernel_size)/stride) + 1))
+        w_out = int(np.floor(((w_in + 2*padding - kernel_size)/stride) + 1))
+        self.h_out = h_out
+        self.w_out = w_out
+        k = in_channels*kernel_size**2
+        self.weight = nn.Parameter(torch.randn(h_out, w_out, out_channels, in_channels, kernel_size, kernel_size)/np.sqrt(k))
+        if bias:
+            self.bias = nn.Parameter(torch.zeros(out_channels, h_out, w_out))
+        if padding > 0:
+            self.padder = nn.ZeroPad2d(padding)
+        
+    def forward(self, input):
+        #input = (batch, in_channels, h_in, w_in)
+        batch_size = input.shape[0]
+        padded_input = self.padder(input) if self.padding > 0 else input
+        output = torch.zeros(batch_size, self.out_channels, self.h_out, self.w_out, device=input.device)
+        for i in range(self.h_out):
+            for j in range(self.w_out):
+                i1 = i*self.stride
+                i2 = i1 + self.kernel_size
+                j1 = j*self.stride
+                j2 = j1 + self.kernel_size
+                input_chunk = padded_input[:, :, i1:i2, j1:j2]
+                weight_for_chunk = self.weight[i, j] #, :, :, :]
+                output[:, :, i, j] = torch.einsum("oikl,bikl->bo", weight_for_chunk, input_chunk)
+        if self.has_bias:
+            output = output + self.bias[None, :, :, :]
+        return output
+                
+        
