@@ -98,7 +98,8 @@ class Linear(nn.Module):
     def post_step_callback(self):
         if self.mono and (not self.first_layer):
             with torch.no_grad():
-                self.weight.clamp_(min=0)
+                #self.weight.clamp_(min=0)
+                self.weight.abs_()
 
     def set_grad(self, activation_mask, output_error):
         #i = batch dim
@@ -128,7 +129,7 @@ class tReLU(nn.Module):
     def forward(self, input):
         if self.t is None:
             t = torch.randint(0, 2, input.shape[1:], device=input.device).float()*2 - 1
-            #t = torch.rand(input.shape[1:], device=input.device)
+            #t = torch.rand(input.shape[1:])
             #t = (t == t.max(dim=0)[0]).float().to(input.device)
             #t = torch.ones(input.shape[1:], device=input.device).float()
             features = t.shape[1]
@@ -138,6 +139,52 @@ class tReLU(nn.Module):
             print("Instantiated t with shape {}".format(tuple(self.t.shape)))
         mask = ((input.detach() * self.t[None]).sum(dim=1) >= 0.).float()
         self.mask = mask
+        output = input * mask[:, None]
+        return output
+
+    def post_step_callback(self):
+        pass
+    
+class ctReLU(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.t = None
+
+    def forward(self, input):
+        if self.t is None:
+            t = torch.zeros(input.shape[1:], device=input.device)
+            features = t.shape[1]
+            for i in range(features // 2):
+                v = torch.randint(0, 2, (t.shape[0],), device=t.device).float()*2 - 1
+                #v = torch.ones(t.shape[0], device=t.device)
+                t[:, 2*i] = v[:, None, None]
+                t[:, 2*i + 1] = -t[:, 2*i]
+            self.t = t
+            print("Instantiated t with shape {}".format(tuple(self.t.shape)))
+        mask = ((input.detach() * self.t[None]).sum(dim=1) >= 0.).float()
+        self.mask = mask
+        output = input * mask[:, None]
+        return output
+
+    def post_step_callback(self):
+        pass
+    
+class cnReLU(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, input):
+        #input_norm = input.detach() / input.detach().norm(dim=1, keepdim=True)
+        #p = input_norm**2
+        #ent = (p * torch.log(p)).sum(dim=1)
+        #mask = (ent < -1.69).float()
+        #print(mask.mean())
+        n = input.detach().norm(dim=1) #batch, C, W, H
+        n_flat = n.view(n.shape[0], n.shape[1], np.prod(n.shape[2:]))
+        #print(n.shape, n_flat.median(dim=2)[0].shape)
+        mask = (n >= n_flat.median(dim=2)[0][:, :, None, None]).float()
+        self.mask = mask
+        #print(mask.shape)
         output = input * mask[:, None]
         return output
 
@@ -176,7 +223,7 @@ class BatchNorm2d(nn.Module):
     def post_step_callback(self):
         pass
 
-def convolutional_outer_product(x1, x2, kernel_size, stride=1):
+def convolutional_outer_product(x1, x2, kernel_size, stride=1, padding=0):
     #assumes stride, padding, dilation are all defaults!
     #x1 = (batch_size, in_channels, h_in, w_in)
     #x2 = (batch_size, out_channels, h_out, w_out)
@@ -197,7 +244,7 @@ def convolutional_outer_product(x1, x2, kernel_size, stride=1):
     x1_prime = x1.permute(1, 0, 2, 3)
     x2_prime = x2.view(batch_size*out_channels, h_out, w_out).unsqueeze(1)
     #out_prime = F.conv2d(input=x1_prime, weight=x2_prime, groups=batch_size, dilation=stride, stride=1)
-    out_prime = F.conv2d(input=x1_prime, weight=x2_prime, groups=batch_size, dilation=stride, stride=1)
+    out_prime = F.conv2d(input=x1_prime, weight=x2_prime, groups=batch_size, dilation=stride, stride=1, padding=padding)
     out_prime = out_prime[:, :, :kernel_size, :kernel_size]
     #out_prime = torch.Tensor(np.copy(out_prime.cpu().detach().numpy()[:, :, ::-1][:, :, :, ::-1])).to(out_prime.device)
     out = out_prime.view(in_channels, batch_size, out_channels, kernel_size, kernel_size).permute(1, 2, 0, 3, 4)
@@ -215,6 +262,7 @@ class Conv2d(nn.Module):
             self.first_layer = first_layer
             self.device = device
             self.stride = 1
+            self.padding = 0
             for k in conv_params.keys():
                 setattr(self, k, conv_params[k]) #will overwrite stride if passed
             self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, bias=False, **conv_params).to(device)
@@ -244,7 +292,8 @@ class Conv2d(nn.Module):
     def post_step_callback(self):
         if self.mono and (not self.first_layer):
             with torch.no_grad():
-                self.conv.weight.clamp_(min=0)
+                #self.conv.weight.clamp_(min=0)
+                self.conv.weight.abs_()
 
     def set_grad(self, activation_mask, output_error, pool_kernel_size=1):
         #activation_mask = (batch_size, out_channels, h_out, w_out)
@@ -257,7 +306,7 @@ class Conv2d(nn.Module):
         x2 = activation_mask
 
         #x2 = (torch.rand(x2.shape, device=x2.device ) < x2.mean()).float().to(0)
-        outer = convolutional_outer_product(x1, x2, self.kernel_size, stride=self.stride)
+        outer = convolutional_outer_product(x1, x2, self.kernel_size, stride=self.stride, padding=self.padding)
         #print(outer)
         delta_W = outer.mean(dim=0) / pool_kernel_size**2
         #print(delta_W.max())
@@ -288,7 +337,7 @@ class AvgPool2d(nn.Module):
         input_reshaped = input.view((batch_size*category_dim,) + CWH)
         output_reshaped = self.pool(input_reshaped)
         output = output_reshaped.view((batch_size, category_dim) + output_reshaped.shape[1:])
-        return output
+        return output*2 #*(self.kernel_size**2 / 2.)
 
     def post_step_callback(self):
         pass
