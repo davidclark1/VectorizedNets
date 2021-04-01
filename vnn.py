@@ -3,8 +3,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+"""
+Input expansion utiltiies
+"""
+
 def expand_input_conv(input, category_dim):
     #input = (batch, channels, width, height)
+    #output = (batch, K, K*channels, width, height)
     batch_size, in_channels = input.shape[:2]
     expanded_input = torch.zeros((batch_size, category_dim, in_channels*category_dim) + input.shape[2:])
     for i in range(category_dim):
@@ -17,6 +22,10 @@ def expand_input(input, category_dim):
     for i in range(category_dim):
         expanded_input[:, i, i*input_dim:(i+1)*input_dim] = input
     return expanded_input
+
+"""
+Init. utilities
+"""
 
 def init_linear(weight, first_layer=False, mono=False):
     if mono:
@@ -71,7 +80,39 @@ def init_conv_mono_l0(weight):
     W = torch.randn((out_channels//2,) + filter_shape_3d) / np.sqrt(in_channels * kernel_size**2)
     weight[::2] = W
     weight[1::2] = -W
+    
+def init_local(weight, first_layer=False, mono=False):
+    if mono:
+        return init_local_mono(weight, first_layer)
+    weight *= 0.
+    h_out, w_out, out_channels, in_channels, kernel_size = weight.shape[:5]
+    f = 1 if first_layer else 0.5
+    weight.normal_(0., 1./np.sqrt(f * in_channels * kernel_size**2))
 
+def init_local_mono(weight, first_layer):
+    if first_layer:
+        return init_local_mono_l0(weight)
+    weight *= 0.
+    h_out, w_out, out_channels, in_channels, kernel_size = weight.shape[:5]
+    W = torch.randn(h_out, w_out, out_channels//2, in_channels//2, kernel_size, kernel_size) / np.sqrt(0.25 * in_channels * kernel_size**2)
+    weight[:, :, ::2, ::2] = F.relu(W)
+    weight[:, :, ::2, 1::2] = F.relu(-W)
+    weight[:, :, 1::2, 1::2] = F.relu(W)
+    weight[:, :, 1::2, ::2] = F.relu(-W)
+
+def init_local_mono_l0(weight):
+    weight *= 0.
+    h_out, w_out, out_channels, in_channels, kernel_size = weight.shape[:5]
+    filter_shape_3d = weight.shape[3:]
+    W = torch.randn((h_out, w_out, out_channels//2,) + filter_shape_3d) / np.sqrt(in_channels * kernel_size**2)
+    weight[:, :, ::2] = W
+    weight[:, :, 1::2] = -W
+    
+
+"""
+Vectorized linear layer
+"""
+    
 class Linear(nn.Module):
     def __init__(self, category_dim, in_features, out_features, first_layer=False, mono=False, device="cpu"):
         super().__init__()
@@ -120,109 +161,11 @@ class Linear(nn.Module):
                 self.bias.grad = delta_b
             else:
                 self.bias.grad += delta_b
-
-class tReLU(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.t = None
-
-    def forward(self, input):
-        if self.t is None:
-            t = torch.randint(0, 2, input.shape[1:], device=input.device).float()*2 - 1
-            #t = torch.rand(input.shape[1:])
-            #t = (t == t.max(dim=0)[0]).float().to(input.device)
-            #t = torch.ones(input.shape[1:], device=input.device).float()
-            features = t.shape[1]
-            for i in range(features // 2):
-                t[:, 2*i + 1] = -t[:, 2*i]
-            self.t = t
-            print("Instantiated t with shape {}".format(tuple(self.t.shape)))
-        mask = ((input.detach() * self.t[None]).sum(dim=1) >= 0.).float()
-        self.mask = mask
-        output = input * mask[:, None]
-        return output
-
-    def post_step_callback(self):
-        pass
-    
-class ctReLU(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.t = None
-
-    def forward(self, input):
-        if self.t is None:
-            t = torch.zeros(input.shape[1:], device=input.device)
-            features = t.shape[1]
-            for i in range(features // 2):
-                v = torch.randint(0, 2, (t.shape[0],), device=t.device).float()*2 - 1
-                #v = torch.ones(t.shape[0], device=t.device)
-                t[:, 2*i] = v[:, None, None]
-                t[:, 2*i + 1] = -t[:, 2*i]
-            self.t = t
-            print("Instantiated t with shape {}".format(tuple(self.t.shape)))
-        mask = ((input.detach() * self.t[None]).sum(dim=1) >= 0.).float()
-        self.mask = mask
-        output = input * mask[:, None]
-        return output
-
-    def post_step_callback(self):
-        pass
-    
-class cnReLU(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, input):
-        #input_norm = input.detach() / input.detach().norm(dim=1, keepdim=True)
-        #p = input_norm**2
-        #ent = (p * torch.log(p)).sum(dim=1)
-        #mask = (ent < -1.69).float()
-        #print(mask.mean())
-        n = input.detach().norm(dim=1) #batch, C, W, H
-        n_flat = n.view(n.shape[0], n.shape[1], np.prod(n.shape[2:]))
-        #print(n.shape, n_flat.median(dim=2)[0].shape)
-        mask = (n >= n_flat.median(dim=2)[0][:, :, None, None]).float()
-        self.mask = mask
-        #print(mask.shape)
-        output = input * mask[:, None]
-        return output
-
-    def post_step_callback(self):
-        pass
-
-
-class ReLU(nn.Module):
-    def forward(self, input):
-        mask = (input.detach().sum(dim=1) >= 0.).float()
-        self.mask = mask
-        output = input * mask[:, None]
-        return output
-
-    def post_step_callback(self):
-        pass
-
-class Flatten(nn.Module):
-    def forward(self, input):
-        #print("Here")
-        #(batch, cat, channels, width, height)
-        input_reshaped = input.permute(0, 1, 3, 4, 2).reshape(input.shape[:2] + (np.prod(input.shape[2:]),))
-        return input_reshaped
-    def post_step_callback(self):
-        pass
-
-class BatchNorm2d(nn.Module):
-    def __init__(self, num_features):
-        super().__init__()
-        self.bn = nn.BatchNorm2d(num_features)
-    def forward(self, input):
-        input_reshaped = input.view((input.shape[0]*input.shape[1],) + input.shape[2:])
-        output_reshaped = self.bn(input_reshaped)
-        output = output_reshaped.view(input.shape)
-        return output
-    def post_step_callback(self):
-        pass
-
+                
+"""
+Vectorized 2d convolutional layer
+"""
+                
 def convolutional_outer_product(x1, x2, kernel_size, stride=1, padding=0):
     #assumes stride, padding, dilation are all defaults!
     #x1 = (batch_size, in_channels, h_in, w_in)
@@ -324,55 +267,10 @@ class Conv2d(nn.Module):
                 self.bias.grad = delta_b
             else:
                 self.bias.grad += delta_b
-
-class AvgPool2d(nn.Module):
-    def __init__(self, kernel_size, **pool_params):
-        super().__init__()
-        self.kernel_size = kernel_size
-        self.pool = nn.AvgPool2d(kernel_size, **pool_params)
-
-    def forward(self, input):
-        batch_size, category_dim = input.shape[:2]
-        CWH = input.shape[2:]
-        input_reshaped = input.view((batch_size*category_dim,) + CWH)
-        output_reshaped = self.pool(input_reshaped)
-        output = output_reshaped.view((batch_size, category_dim) + output_reshaped.shape[1:])
-        return output*2 #*(self.kernel_size**2 / 2.)
-
-    def post_step_callback(self):
-        pass
-
-class Dropout(nn.Module):
-    def __init__(self, p=0.5):
-        super().__init__()
-        self.p = p
-    def forward(self, input):
-        if self.training:
-            mask_shape = (input.shape[0],) + input.shape[2:]
-            mask = (torch.rand(mask_shape, device=input.device) > self.p).float()
-            output = input * mask[:, None] * (1. / (1. - self.p))
-            return output
-        else:
-            return input
-    def post_step_callback(self):
-        pass
-
-
-def set_model_grads(model, output, labels):
-    targets = torch.eye(10, device=labels.device)[labels.detach()]
-    output_error = F.softmax(output, dim=1) - targets
-    for i in range(len(model)):
-        layer = model[i]
-        if layer.__class__.__name__ in ('Conv2d', 'Linear'):
-            #print("Here")
-            if (i < len(model) - 1) and (model[i + 1].__class__.__name__ in ('ReLU', 'tReLU')):
-                print(i, "get mask")
-                mask = model[i + 1].mask
-            else:
-                mask = torch.ones(layer.mask_shape, device=output.device)
-            layer.set_grad(mask, output_error)
-
-#do non-vectorized version first
+                
+"""
+Vectorized locally connected layer
+"""
 
 class Local2d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, h_in, w_in, stride=1, padding=0, bias=True):
@@ -413,5 +311,220 @@ class Local2d(nn.Module):
         if self.has_bias:
             output = output + self.bias[None, :, :, :]
         return output
+    
+    
+class VecLocal2d(nn.Module):
+    def __init__(self, category_dim, in_channels, out_channels, kernel_size, h_in, w_in,
+                 stride=1, padding=0,
+                 mono=False, first_layer=False, device="cpu"):
+            super().__init__()
+            self.category_dim = category_dim
+            self.in_channels = in_channels
+            self.out_channels = out_channels
+            self.kernel_size = kernel_size
+            self.h_in = h_in
+            self.w_in = w_in
+            self.mono = mono
+            self.first_layer = first_layer
+            self.device = device
+            self.stride = stride
+            self.padding = padding
+            self.lc = Local2d(in_channels, out_channels, kernel_size, h_in, w_in,
+                              stride=stride, padding=padding, bias=False).to(device)
+            w_out, h_out = self.lc.w_out, self.lc.h_out
+            self.bias = nn.Parameter(torch.zeros(category_dim, out_channels, h_out, w_out, device=device))
+            with torch.no_grad():
+                init_local(self.lc.weight, first_layer=first_layer, mono=mono)
+                if first_layer:
+                    self.lc.weight *= np.sqrt(category_dim)
+
+    @property
+    def weight(self):
+        return self.lc.weight
+
+    def forward(self, input):
+        #input = (batch_dim, category_dim, channels, width, height)
+        self.input = input.detach()
+        batch_size, category_dim = input.shape[:2]
+        CWH = input.shape[2:]
+        input_reshaped = input.view((batch_size*category_dim,) + CWH)
+        output_reshaped = self.lc(input_reshaped)
+        output = output_reshaped.view((batch_size, category_dim) + output_reshaped.shape[1:])
+        output = output + self.bias[None, :, :, :, :]
+        self.mask_shape = (output.shape[0],) + output.shape[2:]
+        return output
+    
+    def post_step_callback(self):
+        if self.mono and (not self.first_layer):
+            with torch.no_grad():
+                #self.conv.weight.clamp_(min=0)
+                self.lc.weight.abs_()
+
                 
-        
+"""
+Vectorized nonlinearities
+"""
+
+class tReLU(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.t = None
+
+    def forward(self, input):
+        if self.t is None:
+            t = torch.randint(0, 2, input.shape[1:], device=input.device).float()*2 - 1
+            #t = torch.rand(input.shape[1:])
+            #t = (t == t.max(dim=0)[0]).float().to(input.device)
+            #t = torch.ones(input.shape[1:], device=input.device).float()
+            features = t.shape[1]
+            for i in range(features // 2):
+                t[:, 2*i + 1] = -t[:, 2*i]
+            self.t = t
+            print("Instantiated t with shape {}".format(tuple(self.t.shape)))
+        mask = ((input.detach() * self.t[None]).sum(dim=1) >= 0.).float()
+        self.mask = mask
+        output = input * mask[:, None]
+        return output
+
+    def post_step_callback(self):
+        pass
+    
+class ctReLU(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.t = None
+
+    def forward(self, input):
+        if self.t is None:
+            t = torch.zeros(input.shape[1:], device=input.device)
+            features = t.shape[1]
+            for i in range(features // 2):
+                v = torch.randint(0, 2, (t.shape[0],), device=t.device).float()*2 - 1
+                #v = torch.ones(t.shape[0], device=t.device)
+                t[:, 2*i] = v[:, None, None]
+                t[:, 2*i + 1] = -t[:, 2*i]
+            self.t = t
+            print("Instantiated t with shape {}".format(tuple(self.t.shape)))
+        mask = ((input.detach() * self.t[None]).sum(dim=1) >= 0.).float()
+        self.mask = mask
+        output = input * mask[:, None]
+        return output
+
+    def post_step_callback(self):
+        pass
+    
+    
+"""
+Misc. vectorized layers
+"""
+
+class Flatten(nn.Module):
+    def forward(self, input):
+        #print("Here")
+        #(batch, cat, channels, width, height)
+        input_reshaped = input.permute(0, 1, 3, 4, 2).reshape(input.shape[:2] + (np.prod(input.shape[2:]),))
+        return input_reshaped
+    def post_step_callback(self):
+        pass
+
+class AvgPool2d(nn.Module):
+    def __init__(self, kernel_size, **pool_params):
+        super().__init__()
+        self.kernel_size = kernel_size
+        self.pool = nn.AvgPool2d(kernel_size, **pool_params)
+
+    def forward(self, input):
+        batch_size, category_dim = input.shape[:2]
+        CWH = input.shape[2:]
+        input_reshaped = input.view((batch_size*category_dim,) + CWH)
+        output_reshaped = self.pool(input_reshaped)
+        output = output_reshaped.view((batch_size, category_dim) + output_reshaped.shape[1:])
+        return output*2 #*(self.kernel_size**2 / 2.)
+
+    def post_step_callback(self):
+        pass
+
+"""
+Utility for filling .grad attributes with the bio-plausible learning updates
+"""
+
+def set_model_grads(model, output, labels):
+    targets = torch.eye(10, device=labels.device)[labels.detach()]
+    output_error = F.softmax(output, dim=1) - targets
+    for i in range(len(model)):
+        layer = model[i]
+        if layer.__class__.__name__ in ('Conv2d', 'Linear'):
+            #print("Here")
+            if (i < len(model) - 1) and (model[i + 1].__class__.__name__ in ('ReLU', 'tReLU')):
+                print(i, "get mask")
+                mask = model[i + 1].mask
+            else:
+                mask = torch.ones(layer.mask_shape, device=output.device)
+            layer.set_grad(mask, output_error)
+
+
+
+    
+"""
+Not in use
+"""
+
+class cnReLU(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, input):
+        #input_norm = input.detach() / input.detach().norm(dim=1, keepdim=True)
+        #p = input_norm**2
+        #ent = (p * torch.log(p)).sum(dim=1)
+        #mask = (ent < -1.69).float()
+        #print(mask.mean())
+        n = input.detach().norm(dim=1) #batch, C, W, H
+        n_flat = n.view(n.shape[0], n.shape[1], np.prod(n.shape[2:]))
+        #print(n.shape, n_flat.median(dim=2)[0].shape)
+        mask = (n >= n_flat.median(dim=2)[0][:, :, None, None]).float()
+        self.mask = mask
+        #print(mask.shape)
+        output = input * mask[:, None]
+        return output
+
+    def post_step_callback(self):
+        pass
+
+class ReLU(nn.Module):
+    def forward(self, input):
+        mask = (input.detach().sum(dim=1) >= 0.).float()
+        self.mask = mask
+        output = input * mask[:, None]
+        return output
+
+    def post_step_callback(self):
+        pass
+
+class BatchNorm2d(nn.Module):
+    def __init__(self, num_features):
+        super().__init__()
+        self.bn = nn.BatchNorm2d(num_features)
+    def forward(self, input):
+        input_reshaped = input.view((input.shape[0]*input.shape[1],) + input.shape[2:])
+        output_reshaped = self.bn(input_reshaped)
+        output = output_reshaped.view(input.shape)
+        return output
+    def post_step_callback(self):
+        pass
+
+class Dropout(nn.Module):
+    def __init__(self, p=0.5):
+        super().__init__()
+        self.p = p
+    def forward(self, input):
+        if self.training:
+            mask_shape = (input.shape[0],) + input.shape[2:]
+            mask = (torch.rand(mask_shape, device=input.device) > self.p).float()
+            output = input * mask[:, None] * (1. / (1. - self.p))
+            return output
+        else:
+            return input
+    def post_step_callback(self):
+        pass
+
