@@ -25,6 +25,7 @@ def expand_input(input, category_dim):
 
 """
 Init. utilities
+TODO (?) Xavier?
 """
 
 def init_linear(weight, first_layer=False, mono=False):
@@ -108,11 +109,19 @@ def init_local_mono_l0(weight):
     weight[:, :, ::2] = W
     weight[:, :, 1::2] = -W
     
-
 """
 Vectorized linear layer
+
+HOW EACH LAYER WORKS:
+In addition to the forward pass, each vectorized layer has a special method,
+'set_grad', which sets the .grad attribute of the weight and bias to the
+biologically-plausible weight update.
+To this end, the forward method saves as instance attributes:
+1) the input,
+2) the shape of the output data, not including the vectorized dimension.
+TODO: do you need to store the mask?
 """
-    
+
 class Linear(nn.Module):
     def __init__(self, category_dim, in_features, out_features, first_layer=False, mono=False, device="cpu"):
         super().__init__()
