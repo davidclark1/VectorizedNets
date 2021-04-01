@@ -24,8 +24,7 @@ def expand_input(input, category_dim):
     return expanded_input
 
 """
-Init. utilities
-TODO (?) Xavier?
+Linear inits
 """
 
 def init_linear(weight, first_layer=False, mono=False):
@@ -55,6 +54,10 @@ def init_linear_mono_l0(weight):
     weight[::2] = W
     weight[1::2] = -W
 
+"""
+Convolutional inits
+"""
+
 def init_conv(weight, first_layer=False, mono=False):
     if mono:
         return init_conv_mono(weight, first_layer)
@@ -81,6 +84,10 @@ def init_conv_mono_l0(weight):
     W = torch.randn((out_channels//2,) + filter_shape_3d) / np.sqrt(in_channels * kernel_size**2)
     weight[::2] = W
     weight[1::2] = -W
+
+"""
+Locally connected inits
+"""
     
 def init_local(weight, first_layer=False, mono=False):
     if mono:
@@ -110,16 +117,20 @@ def init_local_mono_l0(weight):
     weight[:, :, 1::2] = -W
     
 """
-Vectorized linear layer
-
-HOW EACH LAYER WORKS:
+HOW EACH VECTORIZED LAYER WORKS:
 In addition to the forward pass, each vectorized layer has a special method,
 'set_grad', which sets the .grad attribute of the weight and bias to the
-biologically-plausible weight update.
-To this end, the forward method saves as instance attributes:
+biologically-plausible weight update given the output error and postsynaptic 'activation mask'.
+To accomplish this, the forward method saves two things as instance attributes:
 1) the input,
-2) the shape of the output data, not including the vectorized dimension.
-TODO: do you need to store the mask?
+2) the shape of the output data, not including the vectorized dimension and including the batch dimension.
+These are saved as .input and .mask_shape, respecively. The mask shape is needed if the layer is not followed
+by any nonlinearity. There's probably a way to infer this information without .forward having to store it,
+but this refinement can wait. 
+"""
+
+"""
+Vectorized linear layer
 """
 
 class Linear(nn.Module):
@@ -174,7 +185,7 @@ class Linear(nn.Module):
 """
 Vectorized 2d convolutional layer
 """
-                
+
 def convolutional_outer_product(x1, x2, kernel_size, stride=1, padding=0):
     #assumes stride, padding, dilation are all defaults!
     #x1 = (batch_size, in_channels, h_in, w_in)
@@ -187,18 +198,10 @@ def convolutional_outer_product(x1, x2, kernel_size, stride=1, padding=0):
     out_channels = x2.shape[1]
     h_in, w_in = x1.shape[2:]
     h_out, w_out = x2.shape[2:]
-
-    #x2 = x2.permute(0, 1, 3, 2)
-    #w_out_expected = w_in - kernel_size + 1
-    #h_out_expected = h_in - kernel_size + 1
-    #if (h_out_expected != h_out) or (w_out_expected != w_out):
-    #    raise ValueError("invalid kernel size")
     x1_prime = x1.permute(1, 0, 2, 3)
     x2_prime = x2.view(batch_size*out_channels, h_out, w_out).unsqueeze(1)
-    #out_prime = F.conv2d(input=x1_prime, weight=x2_prime, groups=batch_size, dilation=stride, stride=1)
     out_prime = F.conv2d(input=x1_prime, weight=x2_prime, groups=batch_size, dilation=stride, stride=1, padding=padding)
     out_prime = out_prime[:, :, :kernel_size, :kernel_size]
-    #out_prime = torch.Tensor(np.copy(out_prime.cpu().detach().numpy()[:, :, ::-1][:, :, :, ::-1])).to(out_prime.device)
     out = out_prime.view(in_channels, batch_size, out_channels, kernel_size, kernel_size).permute(1, 2, 0, 3, 4)
     return out
 
