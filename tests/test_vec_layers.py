@@ -53,3 +53,11 @@ def test_nonvectorized_local_bias(in_channels, out_channels, bias):
     assert(out.shape == (16, out_channels, 32, 32))
 
 
+@pytest.mark.parametrize("category_dim", [2, 10, 13])
+def test_local_shape(category_dim):
+    x = torch.randn(16, category_dim, 5, 32, 32)
+    lc = vnn.VecLocal2d(category_dim=category_dim, in_channels=5, out_channels=3,
+    					kernel_size=5, h_in=32, w_in=32, stride=1, padding=2)
+    out = lc(x).detach().numpy()
+    assert(out.shape == (16, category_dim, 3, 32, 32))
+

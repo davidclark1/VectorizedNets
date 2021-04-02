@@ -11,14 +11,15 @@ def expand_input_conv(input, category_dim):
     #input = (batch, channels, width, height)
     #output = (batch, K, K*channels, width, height)
     batch_size, in_channels = input.shape[:2]
-    expanded_input = torch.zeros((batch_size, category_dim, in_channels*category_dim) + input.shape[2:])
+    expanded_input = torch.zeros((batch_size, category_dim, in_channels*category_dim) + input.shape[2:],
+        device=input.device)
     for i in range(category_dim):
         expanded_input[:, i, i*in_channels:(i+1)*in_channels] = input
     return expanded_input
 
 def expand_input(input, category_dim):
     batch_dim, input_dim = input.shape
-    expanded_input = torch.zeros(batch_dim, category_dim, category_dim*input_dim)
+    expanded_input = torch.zeros(batch_dim, category_dim, category_dim*input_dim, device=input.device)
     for i in range(category_dim):
         expanded_input[:, i, i*input_dim:(i+1)*input_dim] = input
     return expanded_input
@@ -30,27 +31,33 @@ Linear inits
 def init_linear(weight, first_layer=False, mono=False):
     if mono:
         return init_linear_mono(weight, first_layer)
-    weight *= 0.
     out_features, in_features = weight.shape
+    weight[:] = 0.
     f = 1. if first_layer else 0.5
     weight.normal_(0., 1./np.sqrt(f * in_features))
 
 def init_linear_mono(weight, first_layer):
     if first_layer:
         return init_linear_mono_l0(weight)
-    weight *= 0.
     out_features, in_features = weight.shape
-    W = torch.randn(max(out_features//2, 1), in_features//2) / np.sqrt(0.25 * in_features)
+    if ((out_features % 2) != 0 and out_features != 1) or ((in_features % 2) != 0):
+        raise ValueError("out_features and in_features must both be even (out_features = 1 is okay, too)")
+    weight[:] = 0.
+    W = torch.randn(max(out_features//2, 1), in_features//2, device=weight.device) / np.sqrt(0.25 * in_features)
+    #+ outputs 
     weight[::2, ::2] = F.relu(W)
     weight[::2, 1::2] = F.relu(-W)
-    if W.shape[0] > 1:
-        weight[1::2, 1::2] = F.relu(W)
+    if out_features > 1:
+        #- outputs
         weight[1::2, ::2] = F.relu(-W)
+        weight[1::2, 1::2] = F.relu(W)
 
 def init_linear_mono_l0(weight):
-    weight *= 0.
     out_features, in_features = weight.shape
-    W = torch.randn(out_features//2, in_features) / np.sqrt(in_features)
+    if ((out_features % 2) != 0) or ((in_features % 2) != 0):
+        raise ValueError("out_features and in_features must both be even")
+    weight[:] = 0.
+    W = torch.randn(out_features//2, in_features, device=weight.device) / np.sqrt(in_features)
     weight[::2] = W
     weight[1::2] = -W
 
@@ -61,7 +68,7 @@ Convolutional inits
 def init_conv(weight, first_layer=False, mono=False):
     if mono:
         return init_conv_mono(weight, first_layer)
-    weight *= 0.
+    weight[:] = 0.
     out_channels, in_channels, kernel_size = weight.shape[:3] #assumes square kernel
     f = 1 if first_layer else 0.5
     weight.normal_(0., 1./np.sqrt(f * in_channels * kernel_size**2))
@@ -69,19 +76,25 @@ def init_conv(weight, first_layer=False, mono=False):
 def init_conv_mono(weight, first_layer):
     if first_layer:
         return init_conv_mono_l0(weight)
-    weight *= 0.
     out_channels, in_channels, kernel_size = weight.shape[:3] #assumes square kernel
-    W = torch.randn(out_channels//2, in_channels//2, kernel_size, kernel_size) / np.sqrt(0.25 * in_channels * kernel_size**2)
+    if ((out_channels % 2) != 0) or ((in_channels % 2) != 0):
+        raise ValueError("out_channel and in_channels must both be even")
+    weight[:] = 0.
+    W = torch.randn(out_channels//2, in_channels//2, kernel_size, kernel_size, device=weight.device) / np.sqrt(0.25 * in_channels * kernel_size**2)
+    #+ outputs
     weight[::2, ::2] = F.relu(W)
     weight[::2, 1::2] = F.relu(-W)
-    weight[1::2, 1::2] = F.relu(W)
+    #- outputs
     weight[1::2, ::2] = F.relu(-W)
+    weight[1::2, 1::2] = F.relu(W)
 
 def init_conv_mono_l0(weight):
-    weight *= 0.
     out_channels, in_channels, kernel_size = weight.shape[:3] #assumes square kernel
+    if ((out_channels % 2) != 0) or ((in_channels % 2) != 0):
+        raise ValueError("out_channel and in_channels must both be even")
+    weight[:] = 0.
     filter_shape_3d = weight.shape[1:]
-    W = torch.randn((out_channels//2,) + filter_shape_3d) / np.sqrt(in_channels * kernel_size**2)
+    W = torch.randn((out_channels//2,) + filter_shape_3d, device=weight.device) / np.sqrt(in_channels * kernel_size**2)
     weight[::2] = W
     weight[1::2] = -W
 
@@ -92,7 +105,7 @@ Locally connected inits
 def init_local(weight, first_layer=False, mono=False):
     if mono:
         return init_local_mono(weight, first_layer)
-    weight *= 0.
+    weight[:] = 0.
     h_out, w_out, out_channels, in_channels, kernel_size = weight.shape[:5]
     f = 1 if first_layer else 0.5
     weight.normal_(0., 1./np.sqrt(f * in_channels * kernel_size**2))
@@ -100,19 +113,23 @@ def init_local(weight, first_layer=False, mono=False):
 def init_local_mono(weight, first_layer):
     if first_layer:
         return init_local_mono_l0(weight)
-    weight *= 0.
     h_out, w_out, out_channels, in_channels, kernel_size = weight.shape[:5]
-    W = torch.randn(h_out, w_out, out_channels//2, in_channels//2, kernel_size, kernel_size) / np.sqrt(0.25 * in_channels * kernel_size**2)
+    if ((out_channels % 2) != 0) or ((in_channels % 2) != 0):
+        raise ValueError("out_channel and in_channels must both be even")
+    weight[:] = 0.
+    W = torch.randn(h_out, w_out, out_channels//2, in_channels//2, kernel_size, kernel_size, device=weight.device) / np.sqrt(0.25 * in_channels * kernel_size**2)
     weight[:, :, ::2, ::2] = F.relu(W)
     weight[:, :, ::2, 1::2] = F.relu(-W)
     weight[:, :, 1::2, 1::2] = F.relu(W)
     weight[:, :, 1::2, ::2] = F.relu(-W)
 
 def init_local_mono_l0(weight):
-    weight *= 0.
     h_out, w_out, out_channels, in_channels, kernel_size = weight.shape[:5]
+    if ((out_channels % 2) != 0) or ((in_channels % 2) != 0):
+        raise ValueError("out_channel and in_channels must both be even")
+    weight[:] = 0.
     filter_shape_3d = weight.shape[3:]
-    W = torch.randn((h_out, w_out, out_channels//2,) + filter_shape_3d) / np.sqrt(in_channels * kernel_size**2)
+    W = torch.randn((h_out, w_out, out_channels//2,) + filter_shape_3d, device=weight.device) / np.sqrt(in_channels * kernel_size**2)
     weight[:, :, ::2] = W
     weight[:, :, 1::2] = -W
     
@@ -393,46 +410,44 @@ class tReLU(nn.Module):
 
     def forward(self, input):
         if self.t is None:
-            t = torch.randint(0, 2, input.shape[1:], device=input.device).float()*2 - 1
-            #t = torch.rand(input.shape[1:])
-            #t = (t == t.max(dim=0)[0]).float().to(input.device)
-            #t = torch.ones(input.shape[1:], device=input.device).float()
-            features = t.shape[1]
-            for i in range(features // 2):
-                t[:, 2*i + 1] = -t[:, 2*i]
+            batch_dim, category_dim, num_features = input.shape
+            t = torch.zeros(category_dim, num_features, device=input.device)
+            t_half = torch.randint(0, 2, (category_dim, num_features//2), device=input.device).float()*2 - 1
+            t[:, ::2] = t_half
+            t[:, 1::2] = -t_half
             self.t = t
             print("Instantiated t with shape {}".format(tuple(self.t.shape)))
         mask = ((input.detach() * self.t[None]).sum(dim=1) >= 0.).float()
         self.mask = mask
         output = input * mask[:, None]
         return output
-
-    def post_step_callback(self):
-        pass
     
 class ctReLU(nn.Module):
-    def __init__(self):
+    def __init__(self, share_t=True):
         super().__init__()
         self.t = None
+        self.share_t = share_t
 
     def forward(self, input):
         if self.t is None:
-            t = torch.zeros(input.shape[1:], device=input.device)
-            features = t.shape[1]
-            for i in range(features // 2):
-                v = torch.randint(0, 2, (t.shape[0],), device=t.device).float()*2 - 1
-                #v = torch.ones(t.shape[0], device=t.device)
-                t[:, 2*i] = v[:, None, None]
-                t[:, 2*i + 1] = -t[:, 2*i]
+            batch_dim, category_dim, num_channels, height, width = input.shape
+            t = torch.zeros(category_dim, num_channels, height, width, device=input.device)
+            if self.share_t:
+                t_half = torch.randint(0, 2, (category_dim, num_channels//2), device=input.device).float()*2 - 1 #NOTE: same t vec per channel
+                t[:, ::2, :, :] = t_half[:, :, None, None]
+                t[:, 1::2, :, :] = -t_half[:, :, None, None]
+            else:
+                t_half = torch.randint(0, 2, (category_dim, num_channels//2, height, width), device=input.device).float()*2 - 1 #NOTE: same t vec per channel
+                t[:, ::2, :, :] = t_half
+                t[:, 1::2, :, :] = -t_half
             self.t = t
-            print("Instantiated t with shape {}".format(tuple(self.t.shape)))
+            tuple_str = str(tuple(self.t.shape))
+            shared_str = "shared" if self.share_t else "unshared"
+            print("Instantiated conv-shaped t with shape {}, {}".format(tuple_str, shared_str))
         mask = ((input.detach() * self.t[None]).sum(dim=1) >= 0.).float()
         self.mask = mask
         output = input * mask[:, None]
         return output
-
-    def post_step_callback(self):
-        pass
     
     
 """
@@ -445,14 +460,12 @@ class Flatten(nn.Module):
         #(batch, cat, channels, width, height)
         input_reshaped = input.permute(0, 1, 3, 4, 2).reshape(input.shape[:2] + (np.prod(input.shape[2:]),))
         return input_reshaped
-    def post_step_callback(self):
-        pass
 
 class AvgPool2d(nn.Module):
-    def __init__(self, kernel_size, **pool_params):
+    def __init__(self, kernel_size):
         super().__init__()
         self.kernel_size = kernel_size
-        self.pool = nn.AvgPool2d(kernel_size, **pool_params)
+        self.pool = nn.AvgPool2d(kernel_size)
 
     def forward(self, input):
         batch_size, category_dim = input.shape[:2]
@@ -460,10 +473,9 @@ class AvgPool2d(nn.Module):
         input_reshaped = input.view((batch_size*category_dim,) + CWH)
         output_reshaped = self.pool(input_reshaped)
         output = output_reshaped.view((batch_size, category_dim) + output_reshaped.shape[1:])
-        return output*2 #*(self.kernel_size**2 / 2.)
+        #output = output * kernel_size #since half the inputs will be zero at initialization
+        return output
 
-    def post_step_callback(self):
-        pass
 
 """
 Utilities for filling .grad attributes with the bio-plausible learning updates
@@ -477,22 +489,24 @@ def set_or_add_grad(param, grad_val):
             param.grad += grad_val.detach() #again, probably don't need detach
 
 def set_model_grads(model, output, labels):
-    targets = torch.eye(10, device=labels.device)[labels.detach()]
+    if len(output.shape) != 2:
+        raise ValueError("output.shape must be (batches, categories)")
+    targets = torch.eye(output.shape[1], device=labels.device)[labels.detach()]
     output_error = F.softmax(output.detach(), dim=1) - targets
     for i in range(len(model)):
         layer = model[i]
         if layer.__class__.__name__ in ('Conv2d', 'Linear', 'VecLocal2d'):
-            #print("Here")
-            if (i < len(model) - 1) and (model[i + 1].__class__.__name__ in ('ReLU', 'tReLU', 'ctReLU')):
-                print(i, "get mask")
+            if (i < len(model) - 1) and (model[i + 1].__class__.__name__ in ('tReLU', 'ctReLU')):
                 mask = model[i + 1].mask
             else:
                 mask = torch.ones(layer.mask_shape, device=output.device)
             layer.set_grad(mask, output_error)
 
+def post_step_callback(model):
+    for module in model:
+        if hasattr(module, "post_step_callback"):
+            module.post_step_callback()
 
-
-    
 """
 Not in use
 """
