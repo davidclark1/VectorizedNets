@@ -277,13 +277,15 @@ class Local2d(nn.Module):
         self.weight = nn.Parameter(torch.randn(h_out, w_out, out_channels, in_channels, kernel_size, kernel_size)/np.sqrt(k))
         if bias:
             self.bias = nn.Parameter(torch.zeros(out_channels, h_out, w_out))
-        if padding > 0:
-            self.padder = nn.ZeroPad2d(padding)
         
     def forward(self, input):
         #input = (batch, in_channels, h_in, w_in)
         batch_size = input.shape[0]
-        padded_input = self.padder(input) if self.padding > 0 else input
+        if self.padding > 0:
+            padder = nn.ZeroPad2d(self.padding)
+            padded_input = padder(input)
+        else:
+            padded_input = input
         output = torch.zeros(batch_size, self.out_channels, self.h_out, self.w_out, device=input.device)
         for i in range(self.h_out):
             for j in range(self.w_out):
@@ -317,7 +319,9 @@ class VecLocal2d(nn.Module):
             self.padding = padding
             self.lc = Local2d(in_channels, out_channels, kernel_size, h_in, w_in,
                               stride=stride, padding=padding, bias=False).to(device)
-            w_out, h_out = self.lc.w_out, self.lc.h_out
+            h_out, w_out = self.lc.h_out, self.lc.w_out
+            self.h_out = h_out
+            self.w_out = w_out
             self.bias = nn.Parameter(torch.zeros(category_dim, out_channels, h_out, w_out, device=device))
             with torch.no_grad():
                 init_local(self.lc.weight, first_layer=first_layer, mono=mono)
@@ -345,6 +349,37 @@ class VecLocal2d(nn.Module):
             with torch.no_grad():
                 #self.conv.weight.clamp_(min=0)
                 self.lc.weight.abs_()
+
+    def set_grad(self, activation_mask, output_error):
+        #activation_mask = (batch_size, out_channels, h_out, w_out)
+        #output_error = (batch_size, category_dim)
+        #weight = (h_out, w_out, out_channels, in_channels, kernel_size, kernel_size)
+        activation_mask = activation_mask.detach()
+        if activation_mask.dtype != torch.float:
+            activation_mask = activation_mask.float()
+        output_error = output_error.detach()
+        input_dp = torch.einsum("bkchw,bk->bchw", self.input, output_error)
+        if self.padding > 0:
+            padder = nn.ZeroPad2d(self.padding)
+            padded_input_dp = padder(input_dp)
+        else:
+            padded_input_dp = input_dp
+        delta_W = torch.zeros_like(self.lc.weight)
+        delta_b = torch.zeros_like(self.bias)
+        for i in range(self.h_out):
+            for j in range(self.w_out):
+                i1 = i*self.stride
+                i2 = i1 + self.kernel_size
+                j1 = j*self.stride
+                j2 = j1 + self.kernel_size
+                input_chunk = padded_input_dp[:, :, i1:i2, j1:j2] #batch, in_channels, K, K
+                post_chunk = activation_mask[:, :, i, j] #batch, out_channels
+                delta_W_local = torch.einsum("bikl,bo->oikl", input_chunk, post_chunk) / padded_input_dp.shape[0] #divide by batch size
+                delta_b_local = torch.einsum("bo,bk->ko", post_chunk, output_error) / padded_input_dp.shape[0] #divide by batch size
+                delta_W[i, j] = delta_W_local
+                delta_b[:, :, i, j] = delta_b_local
+        set_or_add_grad(self.lc.weight, delta_W)
+        set_or_add_grad(self.bias, delta_b)
 
 
 """
@@ -446,7 +481,7 @@ def set_model_grads(model, output, labels):
     output_error = F.softmax(output.detach(), dim=1) - targets
     for i in range(len(model)):
         layer = model[i]
-        if layer.__class__.__name__ in ('Conv2d', 'Linear'):
+        if layer.__class__.__name__ in ('Conv2d', 'Linear', 'VecLocal2d'):
             #print("Here")
             if (i < len(model) - 1) and (model[i + 1].__class__.__name__ in ('ReLU', 'tReLU', 'ctReLU')):
                 print(i, "get mask")
