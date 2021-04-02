@@ -437,7 +437,7 @@ class ctReLU(nn.Module):
                 t[:, ::2, :, :] = t_half[:, :, None, None]
                 t[:, 1::2, :, :] = -t_half[:, :, None, None]
             else:
-                t_half = torch.randint(0, 2, (category_dim, num_channels//2, height, width), device=input.device).float()*2 - 1 #NOTE: same t vec per channel
+                t_half = torch.randint(0, 2, (category_dim, num_channels//2, height, width), device=input.device).float()*2 - 1
                 t[:, ::2, :, :] = t_half
                 t[:, 1::2, :, :] = -t_half
             self.t = t
