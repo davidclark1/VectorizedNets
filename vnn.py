@@ -172,22 +172,14 @@ class Linear(nn.Module):
         dot_prods = torch.einsum("ijn,ij->in", self.input, output_error)
         delta_W = torch.einsum("im,in->mn", activation_mask, dot_prods) / len(self.input)
         delta_b = torch.einsum("ij,im->jm", output_error, activation_mask) / len(self.input)
-        with torch.no_grad():
-            if self.weight.grad is None:
-                self.weight.grad = delta_W
-            else:
-                self.weight.grad += delta_W
-            if self.bias.grad is None:
-                self.bias.grad = delta_b
-            else:
-                self.bias.grad += delta_b
+        set_or_add_grad(self.weight, delta_W)
+        set_or_add_grad(self.bias, delta_b)
                 
 """
 Vectorized 2d convolutional layer
 """
 
 def convolutional_outer_product(x1, x2, kernel_size, stride=1, padding=0):
-    #assumes stride, padding, dilation are all defaults!
     #x1 = (batch_size, in_channels, h_in, w_in)
     #x2 = (batch_size, out_channels, h_out, w_out)
     #out = (batch_size, out_chanels, in_channels, kernel_size, kernel_size)
@@ -205,22 +197,19 @@ def convolutional_outer_product(x1, x2, kernel_size, stride=1, padding=0):
     out = out_prime.view(in_channels, batch_size, out_channels, kernel_size, kernel_size).permute(1, 2, 0, 3, 4)
     return out
 
-
 class Conv2d(nn.Module):
-    def __init__(self, category_dim, in_channels, out_channels, kernel_size, mono=False, first_layer=False, device="cpu", **conv_params):
+    def __init__(self, category_dim, in_channels, out_channels, kernel_size, stride=1, padding=0, mono=False, first_layer=False, device="cpu"):
             super().__init__()
             self.category_dim = category_dim
             self.in_channels = in_channels
             self.out_channels = out_channels
             self.kernel_size = kernel_size
+            self.stride = stride
+            self.padding = padding
             self.mono = mono
             self.first_layer = first_layer
             self.device = device
-            self.stride = 1
-            self.padding = 0
-            for k in conv_params.keys():
-                setattr(self, k, conv_params[k]) #will overwrite stride if passed
-            self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, bias=False, **conv_params).to(device)
+            self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride=stride, padding=padding, bias=False).to(device)
             self.bias = nn.Parameter(torch.zeros(category_dim, out_channels, device=device))
             with torch.no_grad():
                 init_conv(self.conv.weight, first_layer=first_layer, mono=mono)
@@ -231,7 +220,6 @@ class Conv2d(nn.Module):
     def weight(self):
         return self.conv.weight
     
-
     def forward(self, input):
         #input = (batch_dim, category_dim, channels, width, height)
         self.input = input.detach()
@@ -241,7 +229,7 @@ class Conv2d(nn.Module):
         output_reshaped = self.conv(input_reshaped)
         output = output_reshaped.view((batch_size, category_dim) + output_reshaped.shape[1:])
         output = output + self.bias[None, :, :, None, None]
-        self.mask_shape = (output.shape[0],) + output.shape[2:]
+        self.mask_shape = (batch_size,) + output.shape[2:]
         return output
     
     def post_step_callback(self):
@@ -250,7 +238,7 @@ class Conv2d(nn.Module):
                 #self.conv.weight.clamp_(min=0)
                 self.conv.weight.abs_()
 
-    def set_grad(self, activation_mask, output_error, pool_kernel_size=1):
+    def set_grad(self, activation_mask, output_error):
         #activation_mask = (batch_size, out_channels, h_out, w_out)
         #output_error = (batch_size, category_dim)
         activation_mask = activation_mask.detach()
@@ -259,26 +247,12 @@ class Conv2d(nn.Module):
         output_error = output_error.detach()
         x1 = torch.einsum("bkchw,bk->bchw", self.input, output_error)
         x2 = activation_mask
-
-        #x2 = (torch.rand(x2.shape, device=x2.device ) < x2.mean()).float().to(0)
         outer = convolutional_outer_product(x1, x2, self.kernel_size, stride=self.stride, padding=self.padding)
-        #print(outer)
-        delta_W = outer.mean(dim=0) / pool_kernel_size**2
-        #print(delta_W.max())
-        #delta_W *= 0.
-        delta_b = torch.ones(self.bias.shape, device=self.bias.device) * output_error.mean(dim=0)[:, None]
-        #f = activation_mask.shape[-1]**2
-        #delta_W *= 0.25 * f
-        #print("Here")
-        with torch.no_grad():
-            if self.conv.weight.grad is None:
-                self.conv.weight.grad = delta_W
-            else:
-                self.conv.weight.grad += delta_W
-            if self.bias.grad is None:
-                self.bias.grad = delta_b
-            else:
-                self.bias.grad += delta_b
+        delta_W = outer.mean(dim=0)
+        #delta_b = torch.ones(self.bias.shape, device=self.bias.device) * output_error.mean(dim=0)[:, None]
+        delta_b = torch.einsum("bc,bk->bkc", activation_mask.sum(dim=(2, 3)), output_error).mean(dim=0)
+        set_or_add_grad(self.conv.weight, delta_W)
+        set_or_add_grad(self.bias, delta_b)
                 
 """
 Vectorized locally connected layer
@@ -372,7 +346,7 @@ class VecLocal2d(nn.Module):
                 #self.conv.weight.clamp_(min=0)
                 self.lc.weight.abs_()
 
-                
+
 """
 Vectorized nonlinearities
 """
@@ -457,17 +431,24 @@ class AvgPool2d(nn.Module):
         pass
 
 """
-Utility for filling .grad attributes with the bio-plausible learning updates
+Utilities for filling .grad attributes with the bio-plausible learning updates
 """
+
+def set_or_add_grad(param, grad_val):
+    with torch.no_grad():
+        if param.grad is None:
+            param.grad = grad_val.detach() #probably don't need detach
+        else:
+            param.grad += grad_val.detach() #again, probably don't need detach
 
 def set_model_grads(model, output, labels):
     targets = torch.eye(10, device=labels.device)[labels.detach()]
-    output_error = F.softmax(output, dim=1) - targets
+    output_error = F.softmax(output.detach(), dim=1) - targets
     for i in range(len(model)):
         layer = model[i]
         if layer.__class__.__name__ in ('Conv2d', 'Linear'):
             #print("Here")
-            if (i < len(model) - 1) and (model[i + 1].__class__.__name__ in ('ReLU', 'tReLU')):
+            if (i < len(model) - 1) and (model[i + 1].__class__.__name__ in ('ReLU', 'tReLU', 'ctReLU')):
                 print(i, "get mask")
                 mask = model[i + 1].mask
             else:
