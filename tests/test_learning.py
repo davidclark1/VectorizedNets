@@ -23,12 +23,13 @@ def test_mnist_fc(mono):
     n1, n2 = vnn.set_model_grads(model, out, y)
     assert(n1 == 2)
     assert(n2 == 1)
-    for p in model.parameters():
-        assert(hasattr(p, "grad"))
-        assert(p.grad.shape == p.shape)
-        assert(p.grad.max().item() > 1e-4)
+    for (name, p) in model.named_parameters():
+        if name[-2:] != ".t":
+            assert(hasattr(p, "grad"))
+            assert(p.grad.shape == p.shape)
+            assert(p.grad.max().item() > 1e-4)
     params = list(model.parameters())
-    assert(len(params) == 6)
+    assert(len(params) == 8)
 
 @pytest.mark.parametrize("mono", [True, False])
 def test_cifar_fc(mono):
@@ -45,12 +46,13 @@ def test_cifar_fc(mono):
     n1, n2 = vnn.set_model_grads(model, out, y)
     assert(n1 == 4)
     assert(n2 == 1)
-    for p in model.parameters():
-        assert(hasattr(p, "grad"))
-        assert(p.grad.shape == p.shape)
-        assert(p.grad.max().item() > 1e-4)
+    for (name, p) in model.named_parameters():
+        if name[-2:] != ".t":
+            assert(hasattr(p, "grad"))
+            assert(p.grad.shape == p.shape)
+            assert(p.grad.max().item() > 1e-4)
     params = list(model.parameters())
-    assert(len(params) == 10)
+    assert(len(params) == 14)
 
 @pytest.mark.parametrize("mono", [True, False])
 def test_mnist_conv(mono):
@@ -66,12 +68,13 @@ def test_mnist_conv(mono):
     n1, n2 = vnn.set_model_grads(model, out, y)
     assert(n1 == 3)
     assert(n2 == 1)
-    for p in model.parameters():
-        assert(hasattr(p, "grad"))
-        assert(p.grad.shape == p.shape)
-        assert(p.grad.max().item() > 1e-4)
+    for (name, p) in model.named_parameters():
+        if name[-2:] != ".t":
+            assert(hasattr(p, "grad"))
+            assert(p.grad.shape == p.shape)
+            assert(p.grad.max().item() > 1e-4)
     params = list(model.parameters())
-    assert(len(params) == 8)
+    assert(len(params) == 11)
 
 @pytest.mark.parametrize("mono", [True, False])
 def test_cifar_conv(mono):
@@ -88,12 +91,13 @@ def test_cifar_conv(mono):
     n1, n2 = vnn.set_model_grads(model, out, y)
     assert(n1 == 4)
     assert(n2 == 1)
-    for p in model.parameters():
-        assert(hasattr(p, "grad"))
-        assert(p.grad.shape == p.shape)
-        assert(p.grad.max().item() > 1e-4)
+    for (name, p) in model.named_parameters():
+        if name[-2:] != ".t":
+            assert(hasattr(p, "grad"))
+            assert(p.grad.shape == p.shape)
+            assert(p.grad.max().item() > 1e-4)
     params = list(model.parameters())
-    assert(len(params) == 10)
+    assert(len(params) == 14)
 
 @pytest.mark.parametrize("mono", [True, False])
 def test_mnist_lc(mono):
@@ -109,12 +113,13 @@ def test_mnist_lc(mono):
     n1, n2 = vnn.set_model_grads(model, out, y)
     assert(n1 == 3)
     assert(n2 == 1)
-    for p in model.parameters():
-        assert(hasattr(p, "grad"))
-        assert(p.grad.shape == p.shape)
-        assert(p.grad.max().item() > 1e-4)
+    for (name, p) in model.named_parameters():
+        if name[-2:] != ".t":
+            assert(hasattr(p, "grad"))
+            assert(p.grad.shape == p.shape)
+            assert(p.grad.max().item() > 1e-4)
     params = list(model.parameters())
-    assert(len(params) == 8)
+    assert(len(params) == 11)
 
 @pytest.mark.parametrize("mono", [True, False])
 def test_cifar_lc(mono):
@@ -131,12 +136,14 @@ def test_cifar_lc(mono):
     n1, n2 = vnn.set_model_grads(model, out, y)
     assert(n1 == 4)
     assert(n2 == 1)
-    for p in model.parameters():
-        assert(hasattr(p, "grad"))
-        assert(p.grad.shape == p.shape)
-        assert(p.grad.max().item() > 1e-4)
+    for (name, p) in model.named_parameters():
+        if name[-2:] != ".t":
+            print(name)
+            assert(hasattr(p, "grad"))
+            assert(p.grad.shape == p.shape)
+            assert(p.grad.max().item() > 1e-4)
     params = list(model.parameters())
-    assert(len(params) == 10)
+    assert(len(params) == 14)
 
 @pytest.mark.parametrize("mono", [True, False])
 def test_post_step_callback_conv(mono):

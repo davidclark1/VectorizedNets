@@ -404,53 +404,42 @@ Vectorized nonlinearities
 """
 
 class tReLU(nn.Module):
-    def __init__(self):
+    def __init__(self, category_dim, num_features):
         super().__init__()
-        self.t = None
+        t = torch.zeros(category_dim, num_features)
+        t_half = torch.randint(0, 2, (category_dim, num_features//2)).float()*2 - 1
+        t[:, ::2] = t_half
+        t[:, 1::2] = -t_half
+        self.t = nn.Parameter(t)
+        self.t.requires_grad = False
 
     def forward(self, input):
-        if self.t is None:
-            batch_dim, category_dim, num_features = input.shape
-            t = nn.Parameter(torch.zeros(category_dim, num_features, device=input.device))
-            t.requires_grad = False
-            t_half = torch.randint(0, 2, (category_dim, num_features//2), device=input.device).float()*2 - 1
-            t[:, ::2] = t_half
-            t[:, 1::2] = -t_half
-            self.t = t
-            print("Instantiated t with shape {}".format(tuple(self.t.shape)))
         mask = ((input.detach() * self.t[None]).sum(dim=1) >= 0.).float()
         self.mask = mask
         output = input * mask[:, None]
         return output
     
 class ctReLU(nn.Module):
-    def __init__(self, share_t=True):
+    def __init__(self, category_dim, num_channels, height, width, share_t=True):
         super().__init__()
-        self.t = None
         self.share_t = share_t
+        t = torch.zeros(category_dim, num_channels, height, width)
+        if share_t:
+            t_half = torch.randint(0, 2, (category_dim, num_channels//2)).float()*2 - 1 #NOTE: same t vec per channel
+            t[:, ::2, :, :] = t_half[:, :, None, None]
+            t[:, 1::2, :, :] = -t_half[:, :, None, None]
+        else:
+            t_half = torch.randint(0, 2, (category_dim, num_channels//2, height, width)).float()*2 - 1
+            t[:, ::2, :, :] = t_half
+            t[:, 1::2, :, :] = -t_half
+        self.t = nn.Parameter(t)
+        self.t.requires_grad = False
 
     def forward(self, input):
-        if self.t is None:
-            batch_dim, category_dim, num_channels, height, width = input.shape
-            t = nn.Parameter(torch.zeros(category_dim, num_channels, height, width, device=input.device))
-            t.requires_grad = False
-            if self.share_t:
-                t_half = torch.randint(0, 2, (category_dim, num_channels//2), device=input.device).float()*2 - 1 #NOTE: same t vec per channel
-                t[:, ::2, :, :] = t_half[:, :, None, None]
-                t[:, 1::2, :, :] = -t_half[:, :, None, None]
-            else:
-                t_half = torch.randint(0, 2, (category_dim, num_channels//2, height, width), device=input.device).float()*2 - 1
-                t[:, ::2, :, :] = t_half
-                t[:, 1::2, :, :] = -t_half
-            self.t = t
-            tuple_str = str(tuple(self.t.shape))
-            shared_str = "shared" if self.share_t else "unshared"
-            print("Instantiated conv-shaped t with shape {}, {}".format(tuple_str, shared_str))
         mask = ((input.detach() * self.t[None]).sum(dim=1) >= 0.).float()
         self.mask = mask
         output = input * mask[:, None]
         return output
-    
     
 """
 Misc. vectorized layers

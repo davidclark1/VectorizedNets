@@ -117,7 +117,7 @@ def test_init_lc_4(in_channels, out_channels):
 @pytest.mark.parametrize("channels", [6, 4, 2])
 def test_ctrelu_1(channels):
     x = torch.randn(128, 10, channels, 28, 28)
-    nonlin = vnn.ctReLU(share_t=True)
+    nonlin = vnn.ctReLU(10, channels, 28, 28, share_t=True)
     y1 = nonlin(x)
     y2 = nonlin(x)
     assert_allclose(y1, y2)
@@ -127,7 +127,7 @@ def test_ctrelu_1(channels):
 @pytest.mark.parametrize("channels", [6, 4, 2])
 def test_ctrelu_2(channels):
     x = torch.randn(128, 20, channels, 28, 28)
-    nonlin = vnn.ctReLU(share_t=False)
+    nonlin = vnn.ctReLU(20, channels, 28, 28, share_t=False)
     y1 = nonlin(x)
     y2 = nonlin(x)
     assert_allclose(y1, y2)
@@ -138,7 +138,7 @@ def test_ctrelu_2(channels):
 @pytest.mark.parametrize("features", [6, 4, 2])
 def test_trelu(features):
     x = torch.randn(128, 10, features)
-    nonlin = vnn.tReLU()
+    nonlin = vnn.tReLU(10, features)
     y1 = nonlin(x)
     y2 = nonlin(x)
     assert_allclose(y1, y2)
