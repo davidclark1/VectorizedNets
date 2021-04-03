@@ -64,7 +64,7 @@ def eval_accuracy(model, loader, flatten, vectorized, device):
     return accuracy, loss
 
 def save_snapshot(snapshot_dir, model, opt, epoch, train_loss, train_accuracy, test_loss, test_accuracy,
-    flatten, vectorized, learning_rule, device):
+    flatten, vectorized, learning_rule):
     torch.save({
         'epoch': epoch,
         'model_state_dict': model.state_dict(),
@@ -76,9 +76,10 @@ def save_snapshot(snapshot_dir, model, opt, epoch, train_loss, train_accuracy, t
         'flatten': flatten,
         'vectorized': vectorized,
         'learning_rule': learning_rule,
-        'device': device
+        'device': [p.device for p in model.parameters()][0]
         }, "{}/epoch_{}.pt".format(snapshot_dir, epoch))
     print("saved snapshot at epoch {}".format(epoch))
+    print("train/test accuracy: {}/{}".format(train_accuracy, test_accuracy))
 
 def make_dir(dir_name):
     if not os.path.exists(dir_name):
@@ -106,14 +107,17 @@ def restart_from_snapshot(snapshot_dir, model, opt):
 
 def train_model(snapshot_dir, model, train_loader, test_loader, eval_iter, lr, num_epochs,
     flatten, vectorized, learning_rule, device):
+    model = model.to(device)
     opt = optim.Adam(model.parameters(), lr=lr)
     snapshot_epoch, just_restarted = restart_from_snapshot(snapshot_dir, model, opt)
+    #model = model.to(device)
+    #opt = opt.to(device)
     for epoch in range(snapshot_epoch, num_epochs):
         if epoch % eval_iter == 0 and not just_restarted:
             train_accuracy, train_loss = eval_accuracy(model, train_loader, flatten, vectorized, device)
             test_accuracy, test_loss = eval_accuracy(model, test_loader, flatten, vectorized, device)
             save_snapshot(snapshot_dir, model, opt, epoch, train_loss, train_accuracy, test_loss, test_accuracy,
-                flatten, vectorized, learning_rule, device)
+                flatten, vectorized, learning_rule)
         just_restarted = False
         train_epoch(model, opt, train_loader, flatten, vectorized, learning_rule, device)
 

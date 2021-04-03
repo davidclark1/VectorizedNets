@@ -411,7 +411,8 @@ class tReLU(nn.Module):
     def forward(self, input):
         if self.t is None:
             batch_dim, category_dim, num_features = input.shape
-            t = torch.zeros(category_dim, num_features, device=input.device)
+            t = nn.Parameter(torch.zeros(category_dim, num_features, device=input.device))
+            t.requires_grad = False
             t_half = torch.randint(0, 2, (category_dim, num_features//2), device=input.device).float()*2 - 1
             t[:, ::2] = t_half
             t[:, 1::2] = -t_half
@@ -431,7 +432,8 @@ class ctReLU(nn.Module):
     def forward(self, input):
         if self.t is None:
             batch_dim, category_dim, num_channels, height, width = input.shape
-            t = torch.zeros(category_dim, num_channels, height, width, device=input.device)
+            t = nn.Parameter(torch.zeros(category_dim, num_channels, height, width, device=input.device))
+            t.requires_grad = False
             if self.share_t:
                 t_half = torch.randint(0, 2, (category_dim, num_channels//2), device=input.device).float()*2 - 1 #NOTE: same t vec per channel
                 t[:, ::2, :, :] = t_half[:, :, None, None]
