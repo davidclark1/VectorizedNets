@@ -493,14 +493,18 @@ def set_model_grads(model, output, labels):
         raise ValueError("output.shape must be (batches, categories)")
     targets = torch.eye(output.shape[1], device=labels.device)[labels.detach()]
     output_error = F.softmax(output.detach(), dim=1) - targets
+    n1, n2 = 0, 0
     for i in range(len(model)):
         layer = model[i]
         if layer.__class__.__name__ in ('Conv2d', 'Linear', 'VecLocal2d'):
             if (i < len(model) - 1) and (model[i + 1].__class__.__name__ in ('tReLU', 'ctReLU')):
                 mask = model[i + 1].mask
+                n1 += 1
             else:
                 mask = torch.ones(layer.mask_shape, device=output.device)
+                n2 += 1
             layer.set_grad(mask, output_error)
+    return (n1, n2)
 
 def post_step_callback(model):
     for module in model:
