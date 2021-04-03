@@ -128,6 +128,7 @@ def train_epoch(model, opt, train_loader, flatten, vectorized, learning_rule, de
     loss_fn = nn.CrossEntropyLoss(reduction="mean")
     model.train()
     for batch_idx, (data, labels) in enumerate(train_loader):
+        print("Batch!")
         input = format_input(data, flatten, vectorized)
         opt.zero_grad()
         if learning_rule == "bp":

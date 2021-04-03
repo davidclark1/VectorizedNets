@@ -132,10 +132,10 @@ def make_mnist_vec_lc(mono=False):
 
 def make_mnist_nonvec_lc():
     model = nn.Sequential(
-        vnn.VecLocal2d(1, 128, 3, h_in=28, w_in=28, stride=1, padding=1),
+        vnn.Local2d(1, 128, 3, h_in=28, w_in=28, stride=1, padding=1),
         nn.ReLU(),
         nn.AvgPool2d(2),
-        vnn.VecLocal2d(128, 128, 3, h_in=14, w_in=14, stride=1, padding=1),
+        vnn.Local2d(128, 128, 3, h_in=14, w_in=14, stride=1, padding=1),
         nn.ReLU(),
         nn.AvgPool2d(2), #7 by 7
         nn.Flatten(),
@@ -162,13 +162,13 @@ def make_cifar_vec_lc(mono=False):
 
 def make_cifar_nonvec_lc():
     model = nn.Sequential(
-        vnn.VecLocal2d(3, 128, 5, h_in=32, w_in=32, stride=1, padding=2),
+        vnn.Local2d(3, 128, 5, h_in=32, w_in=32, stride=1, padding=2),
         nn.ReLU(),
         nn.AvgPool2d(2),
-        vnn.VecLocal2d(10, 128, 128, 5, h_in=16, w_in=16, stride=1, padding=2),
+        vnn.Local2d(10, 128, 128, 5, h_in=16, w_in=16, stride=1, padding=2),
         nn.ReLU(),
         nn.AvgPool2d(2),
-        vnn.VecLocal2d(128, 128, 2, h_in=8, w_in=8, stride=2, padding=0),
+        vnn.Local2d(128, 128, 2, h_in=8, w_in=8, stride=2, padding=0),
         nn.ReLU(),
         nn.Flatten(),
         nn.Linear(2048, 1024),

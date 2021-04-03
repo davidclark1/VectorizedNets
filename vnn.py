@@ -482,7 +482,7 @@ def set_or_add_grad(param, grad_val):
 def set_model_grads(model, output, labels):
     if len(output.shape) != 2:
         raise ValueError("output.shape must be (batches, categories)")
-    targets = torch.eye(output.shape[1], device=labels.device)[labels.detach()]
+    targets = torch.eye(output.shape[1], device=output.device)[labels.detach()]
     output_error = F.softmax(output.detach(), dim=1) - targets
     n1, n2 = 0, 0
     for i in range(len(model)):
