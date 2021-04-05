@@ -108,7 +108,8 @@ def restart_from_snapshot(snapshot_dir, model, opt):
 def train_model(snapshot_dir, model, train_loader, test_loader, eval_iter, lr, num_epochs,
     flatten, vectorized, learning_rule, device):
     model = model.to(device)
-    opt = optim.Adam(model.parameters(), lr=lr)
+    opt = optim.Adam([p for (name, p) in model.named_parameters() if name[-2:] != '.t'], lr=lr)
+    #opt = optim.Adam(model.parameters(), lr=lr)
     snapshot_epoch, just_restarted = restart_from_snapshot(snapshot_dir, model, opt)
     #model = model.to(device)
     #opt = opt.to(device)
@@ -128,7 +129,7 @@ def train_epoch(model, opt, train_loader, flatten, vectorized, learning_rule, de
     loss_fn = nn.CrossEntropyLoss(reduction="mean")
     model.train()
     for batch_idx, (data, labels) in enumerate(train_loader):
-        print("Batch!")
+        #print("Batch!")
         input = format_input(data, flatten, vectorized)
         opt.zero_grad()
         if learning_rule == "bp":
