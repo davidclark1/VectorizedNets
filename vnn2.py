@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from local2d import lc_forward, lc_backward
 
 """
 Input expansion utiltiies
@@ -106,32 +107,32 @@ def init_local(weight, first_layer=False, mono=False):
     if mono:
         return init_local_mono(weight, first_layer)
     weight[:] = 0.
-    h_out, w_out, out_channels, in_channels, kernel_size = weight.shape[:5]
+    out_channels, h_out, w_out, in_channels, kernel_size = weight.shape[:5]
     f = 1 if first_layer else 0.5
     weight.normal_(0., 1./np.sqrt(f * in_channels * kernel_size**2))
 
 def init_local_mono(weight, first_layer):
     if first_layer:
         return init_local_mono_l0(weight)
-    h_out, w_out, out_channels, in_channels, kernel_size = weight.shape[:5]
+    out_channels, h_out, w_out, in_channels, kernel_size = weight.shape[:5]
     if ((out_channels % 2) != 0) or ((in_channels % 2) != 0):
         raise ValueError("out_channel and in_channels must both be even")
     weight[:] = 0.
-    W = torch.randn(h_out, w_out, out_channels//2, in_channels//2, kernel_size, kernel_size, device=weight.device) / np.sqrt(0.25 * in_channels * kernel_size**2)
-    weight[:, :, ::2, ::2] = F.relu(W)
-    weight[:, :, ::2, 1::2] = F.relu(-W)
-    weight[:, :, 1::2, 1::2] = F.relu(W)
-    weight[:, :, 1::2, ::2] = F.relu(-W)
+    W = torch.randn(out_channels//2, h_out, w_out, in_channels//2, kernel_size, kernel_size, device=weight.device) / np.sqrt(0.25 * in_channels * kernel_size**2)
+    weight[::2, :, :, ::2] = F.relu(W)
+    weight[::2, :, :, 1::2] = F.relu(-W)
+    weight[1::2, :, :, 1::2] = F.relu(W)
+    weight[1::2, :, :, ::2] = F.relu(-W)
 
 def init_local_mono_l0(weight):
-    h_out, w_out, out_channels, in_channels, kernel_size = weight.shape[:5]
+    out_channels, h_out, w_out, in_channels, kernel_size = weight.shape[:5]
     if ((out_channels % 2) != 0) or ((in_channels % 2) != 0):
         raise ValueError("out_channel and in_channels must both be even")
     weight[:] = 0.
     filter_shape_3d = weight.shape[3:]
-    W = torch.randn((h_out, w_out, out_channels//2,) + filter_shape_3d, device=weight.device) / np.sqrt(in_channels * kernel_size**2)
-    weight[:, :, ::2] = W
-    weight[:, :, 1::2] = -W
+    W = torch.randn((out_channels//2, h_out, w_out,) + filter_shape_3d, device=weight.device) / np.sqrt(in_channels * kernel_size**2)
+    weight[::2] = W
+    weight[1::2] = -W
     
 
 """
@@ -139,7 +140,7 @@ Vectorized linear layer
 """
 
 class Linear(nn.Module):
-    def __init__(self, category_dim, in_features, out_features, first_layer=False, mono=False, device="cpu"):
+    def __init__(self, category_dim, in_features, out_features, first_layer=False, mono=False):
         super().__init__()
         self.category_dim = category_dim
         self.in_features = in_features
@@ -148,8 +149,8 @@ class Linear(nn.Module):
         self.first_layer = first_layer
         self.mono = mono
         self.device = device
-        self.weight = nn.Parameter(torch.zeros(out_features, in_features, device=device), requires_grad=False)
-        self.bias = nn.Parameter(torch.zeros(category_dim, out_features, device=device), requires_grad=False)
+        self.weight = nn.Parameter(torch.zeros(out_features, in_features), requires_grad=False)
+        self.bias = nn.Parameter(torch.zeros(category_dim, out_features), requires_grad=False)
         init_linear(self.weight, first_layer=first_layer, mono=mono)
         if first_layer:
             self.weight *= np.sqrt(category_dim)
@@ -164,10 +165,6 @@ class Linear(nn.Module):
         grad_input = torch.matmul(grad_output, self.weight)
         return grad_input
 
-    def post_step_callback(self):
-        if self.mono and (not self.first_layer):
-            self.weight.clamp_(min=0)
-
     def set_grad(self, grad_output, output_error):
         #i = batch dim
         #j = category dim
@@ -178,6 +175,10 @@ class Linear(nn.Module):
         delta_b = torch.einsum("ij,im->jm", output_error, grad_output) / len(self.input)
         set_or_add_grad(self.weight, delta_W)
         set_or_add_grad(self.bias, delta_b)
+
+    def post_step_callback(self):
+        if self.mono and (not self.first_layer):
+            self.weight.clamp_(min=0)
                 
 """
 Vectorized 2d convolutional layer
@@ -202,7 +203,7 @@ def convolutional_outer_product(x1, x2, kernel_size, stride=1, padding=0):
     return out
 
 class Conv2d(nn.Module):
-    def __init__(self, category_dim, in_channels, out_channels, kernel_size, stride=1, padding=0, mono=False, first_layer=False, device="cpu"):
+    def __init__(self, category_dim, in_channels, out_channels, kernel_size, stride=1, padding=0, mono=False, first_layer=False):
             super().__init__()
             self.category_dim = category_dim
             self.in_channels = in_channels
@@ -214,7 +215,7 @@ class Conv2d(nn.Module):
             self.first_layer = first_layer
             self.device = device
             self.weight = nn.Parameter(torch.zeros(out_channels, in_channels, kernel_size, kernel_size), requires_grad=False)
-            self.bias = nn.Parameter(torch.zeros(category_dim, out_channels, device=device), requires_grad=False)
+            self.bias = nn.Parameter(torch.zeros(category_dim, out_channels), requires_grad=False)
             init_conv(self.weight, first_layer=first_layer, mono=mono)
             if first_layer:
                 self.weight *= np.sqrt(category_dim)
@@ -236,10 +237,6 @@ class Conv2d(nn.Module):
         if grad_input.shape != self.input.shape[0:1] + self.input.shape[2:]:
             raise ValueError("Shape mismatch in backwards pass of Conv2d")
         return grad_input
-    
-    def post_step_callback(self):
-        if self.mono and (not self.first_layer):
-            self.weight.clamp_(min=0)
 
     def set_grad(self, grad_output, output_error):
         #grad_output = (batch_size, out_channels, h_out, w_out)
@@ -251,131 +248,17 @@ class Conv2d(nn.Module):
         delta_b = torch.einsum("bc,bk->bkc", grad_output.sum(dim=(2, 3)), output_error).mean(dim=0) #Is this right??
         set_or_add_grad(self.weight, delta_W)
         set_or_add_grad(self.bias, delta_b)
+
+    def post_step_callback(self):
+        if self.mono and (not self.first_layer):
+            self.weight.clamp_(min=0)
                 
 """
 Vectorized locally connected layer
 """
 
-def lc_forward(input, weight, bias=None, stride=1, padding=0):
-    #input = (batch_size, in_channels, h_in, w_in)
-    #weight = (out_channels, h_out, w_out, in_channels, kernel_size, kernel_size)
-    out_channels, h_out, w_out, in_channels, kernel_size = weight.shape[:-1]
-    batch_size = input.shape[0]
-    if padding > 0:
-        padder = nn.ZeroPad2d(padding)
-        padded_input = padder(input)
-    else:
-        padded_input = input
-    output = torch.zeros(batch_size, out_channels, h_out, w_out)
-    for i in range(h_out):
-        for j in range(w_out):
-            i1 = i*stride
-            i2 = i1 + kernel_size
-            j1 = j*stride
-            j2 = j1 + kernel_size
-            input_chunk = padded_input[:, :, i1:i2, j1:j2]
-            weight_for_chunk = weight[:, i, j]
-            output[:, :, i, j] = torch.einsum("oikl,bikl->bo", weight_for_chunk, input_chunk)
-    if bias is not None:
-        output = output + bias
-    return output
-    
-def lc_backward(grad_output, weight, input_shape, stride=1, padding=0):
-    #weight = (out_channels, h_out, w_out, in_channels, K, K)
-    in_channels, h_in, w_in = input_shape
-    batch_size, out_channels = grad_output.shape[:2]
-    grad_input = torch.zeros((batch_size, in_channels, h_in+2*padding, w_in+2*padding))
-    for k in range(kernel_size):
-        for l in range(kernel_size):
-            relevant_weight = weight[:, :, :, :, k, l]
-            result = torch.einsum("omnc,bomn->bcmn", relevant_weight, grad_output)
-            s1, s2 = result.shape[-2:]
-            print(result.shape, grad_input[:, :, stride*k:stride*k+s1, stride*l:stride*l+s2].shape)
-            grad_input[:, :, stride*k:stride*k+s1, stride*l:stride*l+s2] += result
-    if padding > 0:
-        grad_input = grad_input[:, :, padding:-padding, padding:-padding]
-    return grad_input
-
-def lc_compute_grads(input, grad_output, kernel_size, bias=False, stride=1, padding=0):
-        if padding > 0:
-            padder = nn.ZeroPad2d(padding)
-            padded_input = padder(input)
-        else:
-            padded_input = input
-        in_channels, h_in, w_in = input.shape[1:]
-        out_channels, h_out, w_out = grad_output.shape[1:]
-        delta_W = torch.zeros(out_channels, h_out, w_out, in_channels, kernel_size, kernel_size)
-        if bias:
-            delta_b = torch.zeros(out_channels, h_out, w_out)
-        else:
-            delta_b = None
-        for i in range(h_out):
-            for j in range(w_out):
-                i1 = i*stride
-                i2 = i1 + kernel_size
-                j1 = j*stride
-                j2 = j1 + kernel_size
-                input_chunk = padded_input[:, :, i1:i2, j1:j2] #batch, in_channels, K, K
-                post_chunk = grad_output[:, :, i, j] #batch, out_channels
-                delta_W_local = torch.einsum("bikl,bo->oikl", input_chunk, post_chunk) #/ padded_input.shape[0] #divide by batch size
-                delta_W[:, i, j] = delta_W_local
-                if bias:
-                    delta_b_local = post_chunk.sum(dim=0) #/ padded_input.shape[0] #divide by batch size
-                    delta_b[:, i, j] = delta_b_local
-        return delta_W, delta_b #return both grads
-
-class Local2dFunction(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, input, weight, bias=None, stride=1, padding=0):
-        ctx.save_for_backward(input, weight)
-        ctx.has_bias = bias is not None
-        ctx.stride = stride
-        ctx.padding = padding
-        output = lc_forward(input, weight, bias=bias, stride=stride, padding=padding)
-        return output
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        input, weight = ctx.saved_tensors
-        has_bias, stride, padding = ctx.has_bias, ctx.stride, ctx.padding
-        grad_input = grad_weight = grad_bias = None
-        if ctx.needs_input_grad[0]:
-            grad_input = lc_backward(grad_output, weight, input.shape, stride=stride, padding=padding)
-        if ctx.needs_input_grad[1]:
-            grad_weight, grad_bias = lc_compute_grads(input, grad_output, weight.shape[-1],
-                bias=has_bias, stride=stride, padding=padding)
-        return grad_input, grad_weight, grad_bias, None, None
-
-class Local2d(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, h_in, w_in, stride=1, padding=0, bias=True):
-        super().__init__()
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.kernel_size = kernel_size
-        self.h_in = h_in
-        self.w_in = w_in
-        self.stride = stride
-        self.padding = padding
-        self.has_bias = bias
-        h_out = int(np.floor(((h_in + 2*padding - kernel_size)/stride) + 1))
-        w_out = int(np.floor(((w_in + 2*padding - kernel_size)/stride) + 1))
-        self.h_out = h_out
-        self.w_out = w_out
-        k = in_channels*kernel_size**2
-        self.weight = nn.Parameter(torch.randn(out_channels, h_out, w_out, in_channels, kernel_size, kernel_size)/np.sqrt(k))
-        if bias:
-            self.bias = nn.Parameter(torch.zeros(out_channels, h_out, w_out))
-        else:
-            self.register_parameter('bias', None)
-        
-    def forward(self, input):
-        return Local2dFunction.apply(input, self.weight, self.bias, self.stride, self.padding)
-
-"""
 class VecLocal2d(nn.Module):
-    def __init__(self, category_dim, in_channels, out_channels, kernel_size, h_in, w_in,
-                 stride=1, padding=0,
-                 mono=False, first_layer=False, device="cpu"):
+    def __init__(self, category_dim, in_channels, out_channels, kernel_size, h_in, w_in, stride=1, padding=0, mono=False, first_layer=False):
             super().__init__()
             self.category_dim = category_dim
             self.in_channels = in_channels
@@ -383,75 +266,42 @@ class VecLocal2d(nn.Module):
             self.kernel_size = kernel_size
             self.h_in = h_in
             self.w_in = w_in
-            self.mono = mono
-            self.first_layer = first_layer
-            self.device = device
             self.stride = stride
             self.padding = padding
-            self.lc = Local2d(in_channels, out_channels, kernel_size, h_in, w_in,
-                              stride=stride, padding=padding, bias=False).to(device)
-            h_out, w_out = self.lc.h_out, self.lc.w_out
+            h_out = int(np.floor(((h_in + 2*padding - kernel_size)/stride) + 1))
+            w_out = int(np.floor(((w_in + 2*padding - kernel_size)/stride) + 1))
             self.h_out = h_out
             self.w_out = w_out
-            self.bias = nn.Parameter(torch.zeros(category_dim, out_channels, h_out, w_out, device=device))
-            with torch.no_grad():
-                init_local(self.lc.weight, first_layer=first_layer, mono=mono)
-                if first_layer:
-                    self.lc.weight *= np.sqrt(category_dim)
-
-    @property
-    def weight(self):
-        return self.lc.weight
+            self.first_layer = first_layer
+            self.mono = mono
+            k = in_channels*kernel_size**2
+            self.weight = nn.Parameter(torch.zeros(out_channels, h_out, w_out, in_channels, kernel_size, kernel_size), requires_grad=False)
+            self.bias = nn.Parameter(torch.zeros(out_channels, h_out, w_out), requires_grad=False)
+            init_local(self.weight, first_layer=first_layer, mono=mono)
 
     def forward(self, input):
         #input = (batch_dim, category_dim, channels, width, height)
-        self.input = input.detach()
+        self.input = input
         batch_size, category_dim = input.shape[:2]
         CWH = input.shape[2:]
         input_reshaped = input.view((batch_size*category_dim,) + CWH)
-        output_reshaped = self.lc(input_reshaped)
-        output = output_reshaped.view((batch_size, category_dim) + output_reshaped.shape[1:])
-        output = output + self.bias[None, :, :, :, :]
-        self.mask_shape = (output.shape[0],) + output.shape[2:]
+        output_reshaped = lc_forward(input_reshaped, self.weight, None, self.stride, self.padding)
+        output = output_reshaped.view((batch_size, category_dim) + output_reshaped.shape[1:]) + self.bias
         return output
+
+    def custom_backward(self, grad_output, output_error):
+        input_dp = torch.einsum("bkchw,bk->bchw", self.input, output_error)
+        grad_weight, grad_bias = lc_compute_grads(input_dp, grad_output, self.kernel_size, True, self.stride, self.padding)
+        set_or_add_grad(self.weight, grad_weight)
+        set_or_add_grad(self.bias, grad_bias)
+        grad_input = lc_backward(grad_output, self.weight, self.input.shape, self.stride, self.padding)
+        return grad_input
     
     def post_step_callback(self):
         if self.mono and (not self.first_layer):
             with torch.no_grad():
-                #self.conv.weight.clamp_(min=0)
-                self.lc.weight.abs_()
+                self.conv.weight.clamp_(min=0)
 
-    def set_grad(self, activation_mask, output_error):
-        #activation_mask = (batch_size, out_channels, h_out, w_out)
-        #output_error = (batch_size, category_dim)
-        #weight = (h_out, w_out, out_channels, in_channels, kernel_size, kernel_size)
-        activation_mask = activation_mask.detach()
-        if activation_mask.dtype != torch.float:
-            activation_mask = activation_mask.float()
-        output_error = output_error.detach()
-        input_dp = torch.einsum("bkchw,bk->bchw", self.input, output_error)
-        if self.padding > 0:
-            padder = nn.ZeroPad2d(self.padding)
-            padded_input_dp = padder(input_dp)
-        else:
-            padded_input_dp = input_dp
-        delta_W = torch.zeros_like(self.lc.weight)
-        delta_b = torch.zeros_like(self.bias)
-        for i in range(self.h_out):
-            for j in range(self.w_out):
-                i1 = i*self.stride
-                i2 = i1 + self.kernel_size
-                j1 = j*self.stride
-                j2 = j1 + self.kernel_size
-                input_chunk = padded_input_dp[:, :, i1:i2, j1:j2] #batch, in_channels, K, K
-                post_chunk = activation_mask[:, :, i, j] #batch, out_channels
-                delta_W_local = torch.einsum("bikl,bo->oikl", input_chunk, post_chunk) / padded_input_dp.shape[0] #divide by batch size
-                delta_b_local = torch.einsum("bo,bk->ko", post_chunk, output_error) / padded_input_dp.shape[0] #divide by batch size
-                delta_W[i, j] = delta_W_local
-                delta_b[:, :, i, j] = delta_b_local
-        set_or_add_grad(self.lc.weight, delta_W)
-        set_or_add_grad(self.bias, delta_b)
-"""
 
 """
 Vectorized nonlinearities
@@ -527,12 +377,14 @@ class AvgPool2d(nn.Module):
         self.pool = nn.AvgPool2d(kernel_size)
 
     def forward(self, input):
+        h, w = input.shape[-2:]
+        if (h % self.kernel_size != 0) or (w % self.kernel_size != 0):
+            raise ValueError("kernel_size must evenly divide input width/height")
         batch_size, category_dim = input.shape[:2]
         CWH = input.shape[2:]
         input_reshaped = input.view((batch_size*category_dim,) + CWH)
         output_reshaped = self.pool(input_reshaped)
         output = output_reshaped.view((batch_size, category_dim) + output_reshaped.shape[1:])
-        #output = output * kernel_size #since half the inputs will be zero at initialization
         return output
 
     def custom_backward(self, grad_output, output_error):
@@ -574,67 +426,4 @@ def post_step_callback(model):
     for module in model:
         if hasattr(module, "post_step_callback"):
             module.post_step_callback()
-
-"""
-Not in use
-"""
-
-class cnReLU(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, input):
-        #input_norm = input.detach() / input.detach().norm(dim=1, keepdim=True)
-        #p = input_norm**2
-        #ent = (p * torch.log(p)).sum(dim=1)
-        #mask = (ent < -1.69).float()
-        #print(mask.mean())
-        n = input.detach().norm(dim=1) #batch, C, W, H
-        n_flat = n.view(n.shape[0], n.shape[1], np.prod(n.shape[2:]))
-        #print(n.shape, n_flat.median(dim=2)[0].shape)
-        mask = (n >= n_flat.median(dim=2)[0][:, :, None, None]).float()
-        self.mask = mask
-        #print(mask.shape)
-        output = input * mask[:, None]
-        return output
-
-    def post_step_callback(self):
-        pass
-
-class ReLU(nn.Module):
-    def forward(self, input):
-        mask = (input.detach().sum(dim=1) >= 0.).float()
-        self.mask = mask
-        output = input * mask[:, None]
-        return output
-
-    def post_step_callback(self):
-        pass
-
-class BatchNorm2d(nn.Module):
-    def __init__(self, num_features):
-        super().__init__()
-        self.bn = nn.BatchNorm2d(num_features)
-    def forward(self, input):
-        input_reshaped = input.view((input.shape[0]*input.shape[1],) + input.shape[2:])
-        output_reshaped = self.bn(input_reshaped)
-        output = output_reshaped.view(input.shape)
-        return output
-    def post_step_callback(self):
-        pass
-
-class Dropout(nn.Module):
-    def __init__(self, p=0.5):
-        super().__init__()
-        self.p = p
-    def forward(self, input):
-        if self.training:
-            mask_shape = (input.shape[0],) + input.shape[2:]
-            mask = (torch.rand(mask_shape, device=input.device) > self.p).float()
-            output = input * mask[:, None] * (1. / (1. - self.p))
-            return output
-        else:
-            return input
-    def post_step_callback(self):
-        pass
 
