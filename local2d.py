@@ -10,9 +10,7 @@ def lc_forward(input, weight, bias=None, stride=1, padding=0):
     batch_size = input.shape[0]
     if padding > 0:
         padder = nn.ZeroPad2d(padding)
-        print("A", input.shape)
         padded_input = padder(input)
-        print("B", padded_input.shape)
     else:
         padded_input = input
     output = torch.zeros(batch_size, out_channels, h_out, w_out, device=input.device)

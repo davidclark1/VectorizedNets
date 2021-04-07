@@ -157,10 +157,11 @@ class Linear(nn.Module):
         output = torch.matmul(input, self.weight.T) + self.bias
         return output
 
-    def custom_backward(self, grad_output, output_error):
+    def custom_backward(self, grad_output, output_error, need_grad_input=True):
         self.set_grad(grad_output, output_error)
-        grad_input = torch.matmul(grad_output, self.weight)
-        return grad_input
+        if need_grad_input:
+            grad_input = torch.matmul(grad_output, self.weight)
+            return grad_input
 
     def set_grad(self, grad_output, output_error):
         #n = input feature dim, m = output feature dim
@@ -224,13 +225,14 @@ class Conv2d(nn.Module):
         output = output + self.bias[None, :, :, None, None]
         return output
 
-    def custom_backward(self, grad_output, output_error):
+    def custom_backward(self, grad_output, output_error, need_grad_input=True):
         self.set_grad(grad_output, output_error)
-        #TODO: compute what output_padding should be so that works for all strides
-        grad_input = F.conv_transpose2d(grad_output, weight=self.weight, stride=self.stride, padding=self.padding)
-        if grad_input.shape != self.input.shape[0:1] + self.input.shape[2:]:
-            raise ValueError("Shape mismatch in backwards pass of Conv2d")
-        return grad_input
+        if need_grad_input:
+            #TODO: compute what output_padding should be so that works for all strides
+            grad_input = F.conv_transpose2d(grad_output, weight=self.weight, stride=self.stride, padding=self.padding)
+            if grad_input.shape != self.input.shape[0:1] + self.input.shape[2:]:
+                raise ValueError("Shape mismatch in backwards pass of Conv2d")
+            return grad_input
 
     def set_grad(self, grad_output, output_error):
         #grad_output = (batch_size, out_channels, h_out, w_out)
@@ -251,7 +253,7 @@ class Conv2d(nn.Module):
 Vectorized locally connected layer
 """
 
-class VecLocal2d(nn.Module):
+class Local2d(nn.Module):
     def __init__(self, category_dim, in_channels, out_channels, kernel_size, h_in, w_in, stride=1, padding=0, mono=False, first_layer=False):
             super().__init__()
             self.category_dim = category_dim
@@ -282,16 +284,16 @@ class VecLocal2d(nn.Module):
         input_reshaped = input.view((batch_size*category_dim,) + CWH)
         output_reshaped = lc_forward(input_reshaped, weight=self.weight, bias=None, stride=self.stride, padding=self.padding)
         output = output_reshaped.view((batch_size, category_dim) + output_reshaped.shape[1:]) + self.bias[None]
-        #print(output.shape)
         return output
 
-    def custom_backward(self, grad_output, output_error):
+    def custom_backward(self, grad_output, output_error, need_grad_input=True):
         input_dp = torch.einsum("bkchw,bk->bchw", self.input, output_error)
         grad_weight, grad_bias = lc_compute_grads(input_dp, grad_output=grad_output, kernel_size=self.kernel_size, bias=True, stride=self.stride, padding=self.padding, output_error=output_error)
         set_or_add_grad(self.weight, grad_weight)
         set_or_add_grad(self.bias, grad_bias)
-        grad_input = lc_backward(grad_output, weight=self.weight, input_shape=self.input.shape[2:], stride=self.stride, padding=self.padding)
-        return grad_input
+        if need_grad_input:
+            grad_input = lc_backward(grad_output, weight=self.weight, input_shape=self.input.shape[2:], stride=self.stride, padding=self.padding)
+            return grad_input
     
     def post_step_callback(self):
         if self.mono and (not self.first_layer):
@@ -320,9 +322,10 @@ class tReLU(nn.Module):
         output = input * mask[:, None]
         return output
 
-    def custom_backward(self, grad_output, output_error):
-        grad_input = grad_output * self.mask
-        return grad_input
+    def custom_backward(self, grad_output, output_error, need_grad_input=True):
+        if need_grad_input:
+            grad_input = grad_output * self.mask
+            return grad_input
     
 class ctReLU(nn.Module):
     def __init__(self, category_dim, num_channels, height, width, share_t=True):
@@ -345,15 +348,13 @@ class ctReLU(nn.Module):
         #mask = ((input * self.t[None]).sum(dim=1) >= 0.).int().type(input.dtype)
         self.mask = mask
         #mask = (batch, channels, height, width)
-        print(input.shape)
         output = input * mask[:, None]
-        print(output.shape)
         return output
 
-    def custom_backward(self, grad_output, output_error):
-        #print(grad_output.dtype, self.mask.dtype)
-        grad_input = grad_output * self.mask
-        return grad_input
+    def custom_backward(self, grad_output, output_error, need_grad_input=True):
+        if need_grad_input:
+            grad_input = grad_output * self.mask
+            return grad_input
     
 """
 Misc. vectorized layers
@@ -361,17 +362,17 @@ Misc. vectorized layers
 
 class Flatten(nn.Module):
     def forward(self, input):
-        #print("Here")
         #(batch, cat, channels, width, height)
         self.input_shape = input.shape
         input_reshaped = input.permute(0, 1, 3, 4, 2).reshape(input.shape[:2] + (np.prod(input.shape[2:]),))
         return input_reshaped
 
-    def custom_backward(self, grad_output, output_error):
+    def custom_backward(self, grad_output, output_error, need_grad_input=True):
         #grad_output = (batch, channels*width*height)
-        b, cat, c, h, w = self.input_shape
-        grad_input = grad_output.view(b, h, w, c).permute(0, 3, 1, 2) #.clone()
-        return grad_input
+        if need_grad_input:
+            b, cat, c, h, w = self.input_shape
+            grad_input = grad_output.view(b, h, w, c).permute(0, 3, 1, 2) #.clone()
+            return grad_input
 
 
 class AvgPool2d(nn.Module):
@@ -391,10 +392,11 @@ class AvgPool2d(nn.Module):
         output = output_reshaped.view((batch_size, category_dim) + output_reshaped.shape[1:])
         return output
 
-    def custom_backward(self, grad_output, output_error):
+    def custom_backward(self, grad_output, output_error, need_grad_input=True):
         #grad_output = (batch, c, h, w)
-        grad_input = (torch.repeat_interleave(torch.repeat_interleave(grad_output, self.kernel_size, dim=2), self.kernel_size, dim=3) / self.kernel_size**2)
-        return grad_input
+        if need_grad_input:
+            grad_input = (torch.repeat_interleave(torch.repeat_interleave(grad_output, self.kernel_size, dim=2), self.kernel_size, dim=3) / self.kernel_size**2)
+            return grad_input
 
 
 """
@@ -417,33 +419,40 @@ def set_model_grads(model, output, labels, learning_rule="bp", reduction="mean")
     g = torch.ones(batch_size, 1, device=output.device)
     if reduction == "mean":
         g /= batch_size
-    for i in list(range(len(model)))[::-1]:
-        layer = model[i]
-        g = layer.custom_backward(g, output_error)
-
-
-"""
-def set_model_grads(model, output, labels):
-    if len(output.shape) != 2:
-        raise ValueError("output.shape must be (batches, categories)")
-    targets = torch.eye(output.shape[1], device=output.device)[labels.detach()]
-    output_error = F.softmax(output.detach(), dim=1) - targets
-    n1, n2 = 0, 0
-    for i in range(len(model)):
-        layer = model[i]
-        if layer.__class__.__name__ in ('Conv2d', 'Linear', 'VecLocal2d'):
-            if (i < len(model) - 1) and (model[i + 1].__class__.__name__ in ('tReLU', 'ctReLU')):
-                mask = model[i + 1].mask
-                n1 += 1
+    if learning_rule == "bp":
+        #Backprop backwards pass
+        for i in list(range(len(model)))[::-1]:
+            layer = model[i]
+            g = layer.custom_backward(g, output_error)
+    elif learning_rule == "df":
+        #DF backwards pass
+        for i in list(range(len(model)))[::-1]:
+            layer = model[i]
+            if i == len(model) - 1 or type(layer).__name__ in ('Linear', 'Conv2d', 'Local2d'):
+                #output layer or weight layer
+                layer.custom_backward(g, output_error, need_grad_input=False)
+            elif type(layer).__name__ in ('tReLU', 'ctReLU'):
+                #nonlinearity -- feed in all 1s
+                g_const = torch.ones(layer.mask.shape, device=output.device)
+                if reduction == "mean":
+                    g_const /= batch_size
+                g = layer.custom_backward(g_const, output_error)
             else:
-                mask = torch.ones(layer.mask_shape, device=output.device)
-                n2 += 1
-            layer.set_grad(mask, output_error)
-    return (n1, n2)
-"""
+                #don't need to do anything
+                g = None
 
 def post_step_callback(model):
     for module in model:
         if hasattr(module, "post_step_callback"):
             module.post_step_callback()
 
+def toggle_grads(model, requires_grad):
+    for (name, param) in model.named_parameters():
+        if name[-2:] != '.t':
+            param.requires_grad = requires_grad
+        else:
+            param.requires_grad = False
+
+def zero_grads(model):
+    for param in model.parameters():
+        param.grad = None
