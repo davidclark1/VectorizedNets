@@ -269,7 +269,7 @@ class VecLocal2d(nn.Module):
             self.first_layer = first_layer
             self.mono = mono
             self.weight = nn.Parameter(torch.zeros(out_channels, h_out, w_out, in_channels, kernel_size, kernel_size), requires_grad=False)
-            self.bias = nn.Parameter(torch.zeros(out_channels, h_out, w_out), requires_grad=False)
+            self.bias = nn.Parameter(torch.zeros(category_dim, out_channels, h_out, w_out), requires_grad=False)
             init_local(self.weight, first_layer=first_layer, mono=mono)
             if first_layer:
                 self.weight *= np.sqrt(category_dim)
@@ -281,12 +281,13 @@ class VecLocal2d(nn.Module):
         CWH = input.shape[2:]
         input_reshaped = input.view((batch_size*category_dim,) + CWH)
         output_reshaped = lc_forward(input_reshaped, weight=self.weight, bias=None, stride=self.stride, padding=self.padding)
-        output = output_reshaped.view((batch_size, category_dim) + output_reshaped.shape[1:]) + self.bias
+        output = output_reshaped.view((batch_size, category_dim) + output_reshaped.shape[1:]) + self.bias[None]
+        #print(output.shape)
         return output
 
     def custom_backward(self, grad_output, output_error):
         input_dp = torch.einsum("bkchw,bk->bchw", self.input, output_error)
-        grad_weight, grad_bias = lc_compute_grads(input_dp, grad_output, self.kernel_size, True, self.stride, self.padding)
+        grad_weight, grad_bias = lc_compute_grads(input_dp, grad_output=grad_output, kernel_size=self.kernel_size, bias=True, stride=self.stride, padding=self.padding, output_error=output_error)
         set_or_add_grad(self.weight, grad_weight)
         set_or_add_grad(self.bias, grad_bias)
         grad_input = lc_backward(grad_output, weight=self.weight, input_shape=self.input.shape[2:], stride=self.stride, padding=self.padding)
@@ -312,7 +313,9 @@ class tReLU(nn.Module):
         self.t = nn.Parameter(t, requires_grad=False)
 
     def forward(self, input):
-        mask = ((input.detach() * self.t[None]).sum(dim=1) >= 0.).float()
+        to_thresh = (input.detach() * self.t[None]).sum(dim=1)
+        mask = (to_thresh >= 0).float()*1.
+        #mask = ((input * self.t[None]).sum(dim=1) >= 0.).int().type(input.dtype)
         self.mask = mask
         output = input * mask[:, None]
         return output
@@ -337,12 +340,18 @@ class ctReLU(nn.Module):
         self.t = nn.Parameter(t, requires_grad=False)
 
     def forward(self, input):
-        mask = ((input.detach() * self.t[None]).sum(dim=1) >= 0.).float()
+        to_thresh = (input.detach() * self.t[None]).sum(dim=1)
+        mask = (to_thresh >= 0).float()*1.
+        #mask = ((input * self.t[None]).sum(dim=1) >= 0.).int().type(input.dtype)
         self.mask = mask
+        #mask = (batch, channels, height, width)
+        print(input.shape)
         output = input * mask[:, None]
+        print(output.shape)
         return output
 
     def custom_backward(self, grad_output, output_error):
+        #print(grad_output.dtype, self.mask.dtype)
         grad_input = grad_output * self.mask
         return grad_input
     

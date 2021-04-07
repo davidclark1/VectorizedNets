@@ -10,7 +10,9 @@ def lc_forward(input, weight, bias=None, stride=1, padding=0):
     batch_size = input.shape[0]
     if padding > 0:
         padder = nn.ZeroPad2d(padding)
+        print("A", input.shape)
         padded_input = padder(input)
+        print("B", padded_input.shape)
     else:
         padded_input = input
     output = torch.zeros(batch_size, out_channels, h_out, w_out, device=input.device)
@@ -38,12 +40,15 @@ def lc_backward(grad_output, weight, input_shape, stride=1, padding=0):
             relevant_weight = weight[:, :, :, :, k, l]
             result = torch.einsum("omnc,bomn->bcmn", relevant_weight, grad_output)
             s1, s2 = result.shape[-2:]
-            grad_input[:, :, stride*k:stride*k+s1, stride*l:stride*l+s2] += result
+            #grad_input[:, :, stride*k:stride*k+s1, stride*l:stride*l+s2] += result
+            grad_input[:, :, k:k+s1*stride:stride, l:l+s2*stride:stride] += result
     if padding > 0:
+        #s1, s2 = grad_input.shape[-2:]
+        #grad_input = grad_input[:, :, padding:s1-padding, padding:s2-padding]
         grad_input = grad_input[:, :, padding:-padding, padding:-padding]
     return grad_input
 
-def lc_compute_grads(input, grad_output, kernel_size, bias=False, stride=1, padding=0):
+def lc_compute_grads(input, grad_output, kernel_size, bias=False, stride=1, padding=0, output_error=None):
         if padding > 0:
             padder = nn.ZeroPad2d(padding)
             padded_input = padder(input)
@@ -53,7 +58,10 @@ def lc_compute_grads(input, grad_output, kernel_size, bias=False, stride=1, padd
         out_channels, h_out, w_out = grad_output.shape[1:]
         delta_W = torch.zeros(out_channels, h_out, w_out, in_channels, kernel_size, kernel_size, device=input.device)
         if bias:
-            delta_b = torch.zeros(out_channels, h_out, w_out, device=input.device)
+            if output_error is not None:
+                delta_b =  torch.zeros(output_error.shape[1], out_channels, h_out, w_out, device=input.device)
+            else:
+                delta_b =  torch.zeros(out_channels, h_out, w_out, device=input.device)
         else:
             delta_b = None
         for i in range(h_out):
@@ -67,8 +75,11 @@ def lc_compute_grads(input, grad_output, kernel_size, bias=False, stride=1, padd
                 delta_W_local = torch.einsum("bikl,bo->oikl", input_chunk, post_chunk) #/ padded_input.shape[0] #divide by batch size
                 delta_W[:, i, j] = delta_W_local
                 if bias:
-                    delta_b_local = post_chunk.sum(dim=0) #/ padded_input.shape[0] #divide by batch size
-                    delta_b[:, i, j] = delta_b_local
+                    if output_error is not None:
+                        delta_b_local = torch.einsum("bo,bc->co", post_chunk, output_error)
+                    else:
+                        delta_b_local = post_chunk.sum(dim=0)
+                    delta_b[..., i, j] = delta_b_local
         return delta_W, delta_b #return both grads
 
 class Local2dFunction(torch.autograd.Function):
