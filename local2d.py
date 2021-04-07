@@ -13,7 +13,7 @@ def lc_forward(input, weight, bias=None, stride=1, padding=0):
         padded_input = padder(input)
     else:
         padded_input = input
-    output = torch.zeros(batch_size, out_channels, h_out, w_out)
+    output = torch.zeros(batch_size, out_channels, h_out, w_out, device=input.device)
     for i in range(h_out):
         for j in range(w_out):
             i1 = i*stride
@@ -22,7 +22,7 @@ def lc_forward(input, weight, bias=None, stride=1, padding=0):
             j2 = j1 + kernel_size
             input_chunk = padded_input[:, :, i1:i2, j1:j2]
             weight_for_chunk = weight[:, i, j]
-            output[:, :, i, j] = torch.einsum("oikl,bikl->bo", weight_for_chunk, input_chunk)
+            output[:, :, i, j] += torch.einsum("oikl,bikl->bo", weight_for_chunk, input_chunk)
     if bias is not None:
         output = output + bias
     return output
@@ -31,13 +31,13 @@ def lc_backward(grad_output, weight, input_shape, stride=1, padding=0):
     #weight = (out_channels, h_out, w_out, in_channels, K, K)
     in_channels, h_in, w_in = input_shape
     batch_size, out_channels = grad_output.shape[:2]
-    grad_input = torch.zeros((batch_size, in_channels, h_in+2*padding, w_in+2*padding))
+    out_channels, h_out, w_out, in_channels, kernel_size = weight.shape[:5]
+    grad_input = torch.zeros((batch_size, in_channels, h_in+2*padding, w_in+2*padding), device=grad_output.device)
     for k in range(kernel_size):
         for l in range(kernel_size):
             relevant_weight = weight[:, :, :, :, k, l]
             result = torch.einsum("omnc,bomn->bcmn", relevant_weight, grad_output)
             s1, s2 = result.shape[-2:]
-            print(result.shape, grad_input[:, :, stride*k:stride*k+s1, stride*l:stride*l+s2].shape)
             grad_input[:, :, stride*k:stride*k+s1, stride*l:stride*l+s2] += result
     if padding > 0:
         grad_input = grad_input[:, :, padding:-padding, padding:-padding]
@@ -51,9 +51,9 @@ def lc_compute_grads(input, grad_output, kernel_size, bias=False, stride=1, padd
             padded_input = input
         in_channels, h_in, w_in = input.shape[1:]
         out_channels, h_out, w_out = grad_output.shape[1:]
-        delta_W = torch.zeros(out_channels, h_out, w_out, in_channels, kernel_size, kernel_size)
+        delta_W = torch.zeros(out_channels, h_out, w_out, in_channels, kernel_size, kernel_size, device=input.device)
         if bias:
-            delta_b = torch.zeros(out_channels, h_out, w_out)
+            delta_b = torch.zeros(out_channels, h_out, w_out, device=input.device)
         else:
             delta_b = None
         for i in range(h_out):
