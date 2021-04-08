@@ -83,14 +83,14 @@ def test_init_conv_4(in_channels, out_channels):
 
 @pytest.mark.parametrize("in_channels, out_channels", [(2, 8), (4, 2), (50, 6)])
 def test_init_lc_1(in_channels, out_channels):
-    W = torch.zeros(21, 21, out_channels, in_channels, 5, 5)
+    W = torch.zeros(out_channels, 21, 21, in_channels, 5, 5)
     vnn.init_local(W, first_layer=True, mono=True)
     W = W.numpy()
-    assert_allclose(W[:, :, ::2], -W[:, :, 1::2])
+    assert_allclose(W[::2], -W[1::2])
 
 @pytest.mark.parametrize("in_channels, out_channels", [(20, 80), (42, 22), (52, 36)])
 def test_init_lc_2(in_channels, out_channels):
-    W = torch.zeros(21, 21, out_channels, in_channels, 5, 5)
+    W = torch.zeros(out_channels, 21, 21, in_channels, 5, 5)
     vnn.init_local(W, first_layer=True, mono=False)
     W = W.numpy()
     frac_positive = np.mean(W >= 0.)
@@ -98,16 +98,16 @@ def test_init_lc_2(in_channels, out_channels):
 
 @pytest.mark.parametrize("in_channels, out_channels", [(2, 8), (4, 2), (50, 6)])
 def test_init_lc_3(in_channels, out_channels):
-    W = torch.zeros(21, 21, out_channels, in_channels, 5, 5)
+    W = torch.zeros(out_channels, 21, 21, in_channels, 5, 5)
     vnn.init_local(W, first_layer=False, mono=True)
     W = W.numpy()
     assert(np.all(W >= 0.))
-    assert_allclose(W[:, :, ::2, ::2], W[:, :, 1::2, 1::2])
-    assert_allclose(W[:, :, 1::2, ::2], W[:, :, ::2, 1::2])
+    assert_allclose(W[::2, :, :, ::2], W[1::2, :, :, 1::2])
+    assert_allclose(W[1::2, :, :, ::2], W[::2, :, :, 1::2])
 
 @pytest.mark.parametrize("in_channels, out_channels", [(211, 83), (42, 22), (51, 61)])
 def test_init_lc_4(in_channels, out_channels):
-    W = torch.zeros(21, 21, out_channels, in_channels, 5, 5)
+    W = torch.zeros(out_channels, 21, 21, in_channels, 5, 5)
     vnn.init_local(W, first_layer=False, mono=False)
     W = W.numpy()
     frac_positive = np.mean(W >= 0.)

@@ -1,6 +1,7 @@
 import sys
 sys.path.append("..")
 import vnn
+import local2d
 import numpy as np
 import torch
 import torch.nn as nn
@@ -34,21 +35,21 @@ def test_linear(category_dim):
 @pytest.mark.parametrize("in_channels, out_channels", [(1, 5), (5, 1), (3, 5), (7, 12)])
 def test_nonvectorized_local(in_channels, out_channels):
     x = torch.randn(16, in_channels, 32, 32)
-    lc = vnn.Local2d(in_channels=in_channels, out_channels=out_channels, kernel_size=5, h_in=32, w_in=32, stride=1, padding=2)
+    lc = local2d.Local2d(in_channels=in_channels, out_channels=out_channels, kernel_size=5, h_in=32, w_in=32, stride=1, padding=2)
     out = lc(x).detach().numpy()
     assert(out.shape == (16, out_channels, 32, 32))
 
 @pytest.mark.parametrize("in_channels, out_channels", [(1, 5), (5, 1), (3, 5), (7, 12)])
 def test_nonvectorized_local_strided(in_channels, out_channels):
     x = torch.randn(16, in_channels, 32, 32)
-    lc = vnn.Local2d(in_channels=in_channels, out_channels=out_channels, kernel_size=5, h_in=32, w_in=32, stride=2, padding=2)
+    lc = local2d.Local2d(in_channels=in_channels, out_channels=out_channels, kernel_size=5, h_in=32, w_in=32, stride=2, padding=2)
     out = lc(x).detach().numpy()
     assert(out.shape == (16, out_channels, 16, 16))
 
 @pytest.mark.parametrize("in_channels, out_channels, bias", [(1, 5, True), (5, 1, False), (3, 5, True), (7, 12, False)])
 def test_nonvectorized_local_bias(in_channels, out_channels, bias):
     x = torch.randn(16, in_channels, 32, 32)
-    lc = vnn.Local2d(in_channels=in_channels, out_channels=out_channels, kernel_size=5, h_in=32, w_in=32, stride=1, padding=2, bias=bias)
+    lc = local2d.Local2d(in_channels=in_channels, out_channels=out_channels, kernel_size=5, h_in=32, w_in=32, stride=1, padding=2, bias=bias)
     out = lc(x).detach().numpy()
     assert(out.shape == (16, out_channels, 32, 32))
 
@@ -56,7 +57,7 @@ def test_nonvectorized_local_bias(in_channels, out_channels, bias):
 @pytest.mark.parametrize("category_dim", [2, 10, 13])
 def test_local_shape(category_dim):
     x = torch.randn(16, category_dim, 5, 32, 32)
-    lc = vnn.VecLocal2d(category_dim=category_dim, in_channels=5, out_channels=3,
+    lc = vnn.Local2d(category_dim=category_dim, in_channels=5, out_channels=3,
     					kernel_size=5, h_in=32, w_in=32, stride=1, padding=2)
     out = lc(x).detach().numpy()
     assert(out.shape == (16, category_dim, 3, 32, 32))

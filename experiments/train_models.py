@@ -54,7 +54,7 @@ def eval_accuracy(model, loader, flatten, vectorized, device):
         with torch.no_grad():
             output = model(input.to(device))
         if vectorized:
-            output = output[:, :, 0]
+            output = output[..., 0]
         loss = loss_fn(output, labels.to(device)).item()
         loss_sum += loss
         num_correct += (output.argmax(dim=1).cpu() == labels).int().sum().item()
@@ -129,22 +129,19 @@ def train_epoch(model, opt, train_loader, flatten, vectorized, learning_rule, de
     loss_fn = nn.CrossEntropyLoss(reduction="mean")
     model.train()
     for batch_idx, (data, labels) in enumerate(train_loader):
-        #print("Batch!")
         input = format_input(data, flatten, vectorized)
-        opt.zero_grad()
-        if learning_rule == "bp":
-            #=====BP======
+        vnn.zero_grads(model)
+        if vectorized:
+            vnn.toggle_grads(model, False)
+            output = model(input.to(device))[..., 0]
+            vnn.set_model_grads(model, output, labels, learning_rule=learning_rule, reduction="mean")
+            loss = loss_fn(output, labels.to(device))
+        else:
+            #unvectorized BP
+            vnn.toggle_grads(model, True)
             output = model(input.to(device))
-            if vectorized:
-                output = output[:, :, 0]
             loss = loss_fn(output, labels.to(device))
             loss.backward()
-        elif learning_rule == "df":
-            #=====DF======
-            with torch.no_grad():
-                output = model(input.to(device))[:, :, 0]
-            vnn.set_model_grads(model, output, labels)
-            loss = loss_fn(output, labels.to(device))
         opt.step()
         if vectorized:
             vnn.post_step_callback(model)
@@ -231,8 +228,111 @@ def run_mnist_experiments(eval_iter=3, lr=3e-4, num_epochs=200, device="cpu", ex
             train_model("models/mnist_vec_lc_df_mono", model, **common_params,
                 flatten=False, vectorized=True, learning_rule="df")
 
+def run_cifar_experiments(eval_iter=3, lr=3e-4, num_epochs=200, device="cpu", experiment_indices=None):
+    train_loader, test_loader = load_cifar()
+    common_params = {
+        "train_loader": train_loader,
+        "test_loader": test_loader,
+        "eval_iter": eval_iter,
+        "lr": lr,
+        "num_epochs": num_epochs,
+        "device": device}
+    if experiment_indices is None:
+        experiment_indices = np.arange(15)
+    for i in experiment_indices:
+        #Fully connected
+        if i == 0:
+            model = models.make_cifar_nonvec_fc()
+            train_model("models/cifar_nonvec_fc_bp", model, **common_params,
+                flatten=True, vectorized=False, learning_rule="bp")
+        elif i == 1:
+            model = models.make_cifar_vec_fc(mono=False)
+            train_model("models/cifar_vec_fc_bp_mixed", model, **common_params,
+                flatten=True, vectorized=True, learning_rule="bp")
+        elif i == 2:
+            model = models.make_cifar_vec_fc(mono=True)
+            train_model("models/cifar_vec_fc_bp_mono", model, **common_params,
+                flatten=True, vectorized=True, learning_rule="bp")
+        elif i == 3:
+            model = models.make_cifar_vec_fc(mono=False)
+            train_model("models/cifar_vec_fc_df_mixed", model, **common_params,
+                flatten=True, vectorized=True, learning_rule="df")
+        elif i == 4:
+            model = models.make_cifar_vec_fc(mono=True)
+            train_model("models/cifar_vec_fc_df_mono", model, **common_params,
+                flatten=True, vectorized=True, learning_rule="df")
+        #Convolutional
+        elif i == 5:
+            model = models.make_cifar_nonvec_conv()
+            train_model("models/cifar_nonvec_conv_bp", model, **common_params,
+                flatten=False, vectorized=False, learning_rule="bp")
+        elif i == 6:
+            model = models.make_cifar_vec_conv(mono=False)
+            train_model("models/cifar_vec_conv_bp_mixed", model, **common_params,
+                flatten=False, vectorized=True, learning_rule="bp")
+        elif i == 7:
+            model = models.make_cifar_vec_conv(mono=True)
+            train_model("models/cifar_vec_conv_bp_mono", model, **common_params,
+                flatten=False, vectorized=True, learning_rule="bp")
+        elif i == 8:
+            model = models.make_cifar_vec_conv(mono=False)
+            train_model("models/cifar_vec_conv_df_mixed", model, **common_params,
+                flatten=False, vectorized=True, learning_rule="df")
+        elif i == 9:
+            model = models.make_cifar_vec_conv(mono=True)
+            train_model("models/cifar_vec_conv_df_mono", model, **common_params,
+                flatten=False, vectorized=True, learning_rule="df")
+        #Locally connected
+        elif i == 10:
+            model = models.make_cifar_nonvec_lc()
+            train_model("models/cifar_nonvec_lc_bp", model, **common_params,
+                flatten=False, vectorized=False, learning_rule="bp")
+        elif i == 11:
+            model = models.make_cifar_vec_lc(mono=False)
+            train_model("models/cifar_vec_lc_bp_mixed", model, **common_params,
+                flatten=False, vectorized=True, learning_rule="bp")
+        elif i == 12:
+            model = models.make_cifar_vec_lc(mono=True)
+            train_model("models/cifar_vec_lc_bp_mono", model, **common_params,
+                flatten=False, vectorized=True, learning_rule="bp")
+        elif i == 13:
+            model = models.make_cifar_vec_lc(mono=False)
+            train_model("models/cifar_vec_lc_df_mixed", model, **common_params,
+                flatten=False, vectorized=True, learning_rule="df")
+        elif i == 14:
+            model = models.make_cifar_vec_lc(mono=True)
+            train_model("models/cifar_vec_lc_df_mono", model, **common_params,
+                flatten=False, vectorized=True, learning_rule="df")
+
 #if __name__ == "__main__":
-#    run_mnist_experiments()
+#    run_cifar_experiments()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
