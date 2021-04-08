@@ -61,7 +61,7 @@ def test_mnist_vec_conv_models(model_idx):
     compare_grads(model, input)
 
 @pytest.mark.parametrize("model_idx", [0, 1])
-def dont_test_mnist_vec_lc_models(model_idx):
+def test_mnist_vec_lc_models(model_idx):
     vec_model_fns = [
         lambda: models.make_mnist_vec_lc(True),
         lambda: models.make_mnist_vec_lc(False),
@@ -91,7 +91,7 @@ def test_cifar_vec_conv_models(model_idx):
     compare_grads(model, input)
 
 @pytest.mark.parametrize("model_idx", [0, 1])
-def dont_test_cifar_vec_lc_models(model_idx):
+def test_cifar_vec_lc_models(model_idx):
     vec_model_fns = [
         lambda: models.make_cifar_vec_lc(True),
         lambda: models.make_cifar_vec_lc(False),

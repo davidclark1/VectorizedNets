@@ -304,8 +304,11 @@ def run_cifar_experiments(eval_iter=3, lr=3e-4, num_epochs=200, device="cpu", ex
             train_model("models/cifar_vec_lc_df_mono", model, **common_params,
                 flatten=False, vectorized=True, learning_rule="df")
 
-#if __name__ == "__main__":
-#    run_cifar_experiments()
+if __name__ == "__main__":
+    run_mnist_experiments(eval_iter=10, device=0, experiment_indices=list(range(0, 10)))
+    run_cifar_experiments(eval_iter=10, device=0, experiment_indices=list(range(0, 10)))
+    run_mnist_experiments(eval_iter=10, device=0, experiment_indices=list(range(10, 15)))
+    run_cifar_experiments(eval_iter=10, device=0, experiment_indices=list(range(10, 15)))
 
 
 

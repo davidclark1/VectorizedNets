@@ -298,7 +298,7 @@ class Local2d(nn.Module):
     def post_step_callback(self):
         if self.mono and (not self.first_layer):
             with torch.no_grad():
-                self.conv.weight.clamp_(min=0)
+                self.weight.clamp_(min=0)
 
 
 """

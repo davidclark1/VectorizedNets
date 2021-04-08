@@ -96,7 +96,7 @@ class Local2dFunction(torch.autograd.Function):
         has_bias, stride, padding = ctx.has_bias, ctx.stride, ctx.padding
         grad_input = grad_weight = grad_bias = None
         if ctx.needs_input_grad[0]:
-            grad_input = lc_backward(grad_output, weight, input.shape, stride=stride, padding=padding)
+            grad_input = lc_backward(grad_output, weight, input.shape[1:], stride=stride, padding=padding)
         if ctx.needs_input_grad[1]:
             grad_weight, grad_bias = lc_compute_grads(input, grad_output, weight.shape[-1],
                 bias=has_bias, stride=stride, padding=padding)
