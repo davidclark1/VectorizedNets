@@ -48,7 +48,6 @@ def eval_accuracy(model, loader, flatten, vectorized, device):
     num_correct = 0
     num_examples = 0
     loss_fn = nn.CrossEntropyLoss(reduction="sum") #note: sum, not mean here
-    model.eval()
     for batch_idx, (data, labels) in enumerate(loader):
         input = format_input(data, flatten, vectorized)
         with torch.no_grad():
@@ -108,11 +107,8 @@ def restart_from_snapshot(snapshot_dir, model, opt):
 def train_model(snapshot_dir, model, train_loader, test_loader, eval_iter, lr, num_epochs,
     flatten, vectorized, learning_rule, device):
     model = model.to(device)
-    opt = optim.Adam([p for (name, p) in model.named_parameters() if name[-2:] != '.t'], lr=lr)
-    #opt = optim.Adam(model.parameters(), lr=lr)
+    opt = optim.Adam(model.parameters(), lr=lr)
     snapshot_epoch, just_restarted = restart_from_snapshot(snapshot_dir, model, opt)
-    #model = model.to(device)
-    #opt = opt.to(device)
     for epoch in range(snapshot_epoch, num_epochs):
         if epoch % eval_iter == 0 and not just_restarted:
             train_accuracy, train_loss = eval_accuracy(model, train_loader, flatten, vectorized, device)
@@ -127,24 +123,25 @@ def train_epoch(model, opt, train_loader, flatten, vectorized, learning_rule, de
     num_correct = 0 #sum of correct counts
     num_examples = 0 #total # examples
     loss_fn = nn.CrossEntropyLoss(reduction="mean")
-    model.train()
     for batch_idx, (data, labels) in enumerate(train_loader):
         input = format_input(data, flatten, vectorized)
-        vnn.zero_grads(model)
+        opt.zero_grad()
         if vectorized:
-            vnn.toggle_grads(model, False)
-            output = model(input.to(device))[..., 0]
+            #vectorized BP or DF
+            with torch.no_grad(): #makes no difference...but this proves to ourselves that there's no gradient here!
+                output = model(input.to(device))[..., 0]
             vnn.set_model_grads(model, output, labels, learning_rule=learning_rule, reduction="mean")
             loss = loss_fn(output, labels.to(device))
         else:
-            #unvectorized BP
-            vnn.toggle_grads(model, True)
-            output = model(input.to(device))
+            #unvectorized BP or DF
+            output = model(input.to(device), learning_rule=learning_rule)
             loss = loss_fn(output, labels.to(device))
             loss.backward()
         opt.step()
         if vectorized:
             vnn.post_step_callback(model)
+        else:
+            models.post_step_callback(model)
         avg_loss_sum += loss.item()
         num_correct += (output.detach().argmax(dim=1).cpu() == labels).int().sum().item()
         num_examples += len(data)
