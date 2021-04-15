@@ -305,10 +305,10 @@ def run_cifar_experiments(eval_iter=3, lr=3e-4, num_epochs=200, device="cpu", ex
                 flatten=False, vectorized=True, learning_rule="df")
 
 if __name__ == "__main__":
-    run_mnist_experiments(eval_iter=10, device=0, experiment_indices=list(range(0, 10)))
-    run_cifar_experiments(eval_iter=10, device=0, experiment_indices=list(range(0, 10)))
-    run_mnist_experiments(eval_iter=10, device=0, experiment_indices=list(range(10, 15)))
-    run_cifar_experiments(eval_iter=10, device=0, experiment_indices=list(range(10, 15)))
+    #run_mnist_experiments(eval_iter=10, device=0, experiment_indices=list(range(0, 10)))
+    #run_cifar_experiments(eval_iter=10, device=0, experiment_indices=list(range(0, 10)))
+    run_mnist_experiments(eval_iter=10, num_epochs=101, device=0, experiment_indices=list(range(10, 15)))
+    run_cifar_experiments(eval_iter=10, num_epochs=101, device=0, experiment_indices=list(range(10, 15)))
 
 
 

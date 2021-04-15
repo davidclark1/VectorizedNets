@@ -4,3 +4,6 @@ data/
 .DS_Store
 figs/*
 *.pt
+*.pdf
+*.png
+*.pickle
