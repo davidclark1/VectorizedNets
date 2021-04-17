@@ -2,8 +2,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from local2d import lc_forward, lc_backward, lc_compute_grads
-
 
 """
 Linear inits
@@ -71,8 +69,8 @@ def init_conv_mono(weight, first_layer):
 
 def init_conv_mono_l0(weight):
     out_channels, in_channels, kernel_size = weight.shape[:3] #assumes square kernel
-    if ((out_channels % 2) != 0) or ((in_channels % 2) != 0):
-        raise ValueError("out_channel and in_channels must both be even")
+    if (out_channels % 2) != 0: #or ((in_channels % 2) != 0):
+        raise ValueError("out_channels must be even") #and in_channels must both be even
     weight[:] = 0.
     filter_shape_3d = weight.shape[1:]
     W = torch.randn((out_channels//2,) + filter_shape_3d, device=weight.device) / np.sqrt(in_channels * kernel_size**2)
@@ -106,8 +104,8 @@ def init_local_mono(weight, first_layer):
 
 def init_local_mono_l0(weight):
     out_channels, h_out, w_out, in_channels, kernel_size = weight.shape[:5]
-    if ((out_channels % 2) != 0) or ((in_channels % 2) != 0):
-        raise ValueError("out_channel and in_channels must both be even")
+    if (out_channels % 2) != 0: #or ((in_channels % 2) != 0):
+        raise ValueError("out_channels must be even") #and in_channels must both be even
     weight[:] = 0.
     filter_shape_3d = weight.shape[3:]
     W = torch.randn((out_channels//2, h_out, w_out,) + filter_shape_3d, device=weight.device) / np.sqrt(in_channels * kernel_size**2)

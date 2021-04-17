@@ -2,8 +2,8 @@ import sys
 sys.path.append("..")
 import vnn
 import local2d
-sys.path.append("../experiments")
-import models
+#sys.path.append("../experiments")
+import vec_models as models
 import numpy as np
 import torch
 import torch.nn as nn
