@@ -340,49 +340,49 @@ def run_cifar_nonvec_experiments(eval_iter=10, lr=3e-4, num_epochs=200, device="
     for i in experiment_indices:
         #Fully connected
         if i == 0:
-            model = vec_models.make_cifar_nonvec_fc(mono=False)
+            model = nonvec_models.make_cifar_nonvec_fc(mono=False)
             train_model(MODEL_DIR + "/cifar_nonvec_fc_bp_mixed", model, **common_params, flatten=True, learning_rule="bp")
         elif i == 1:
-            model = vec_models.make_cifar_nonvec_fc(mono=True)
+            model = nonvec_models.make_cifar_nonvec_fc(mono=True)
             train_model(MODEL_DIR + "/cifar_nonvec_fc_bp_mono", model, **common_params,flatten=True, learning_rule="bp")
         elif i == 2:
-            model = vec_models.make_cifar_nonvec_fc(mono=False)
+            model = nonvec_models.make_cifar_nonvec_fc(mono=False)
             train_model(MODEL_DIR + "/cifar_nonvec_fc_df_mixed", model, **common_params,flatten=True, learning_rule="df")
         elif i == 3:
-            model = vec_models.make_cifar_nonvec_fc(mono=True)
+            model = nonvec_models.make_cifar_nonvec_fc(mono=True)
             train_model(MODEL_DIR + "/cifar_nonvec_fc_df_mono", model, **common_params,flatten=True, learning_rule="df")
         #Convolutional
         elif i == 4:
-            model = vec_models.make_cifar_nonvec_conv(mono=False)
+            model = nonvec_models.make_cifar_nonvec_conv(mono=False)
             train_model(MODEL_DIR + "/cifar_nonvec_conv_bp_mixed", model, **common_params, flatten=False, learning_rule="bp")
         elif i == 5:
-            model = vec_models.make_cifar_nonvec_conv(mono=True)
+            model = nonvec_models.make_cifar_nonvec_conv(mono=True)
             train_model(MODEL_DIR + "/cifar_nonvec_conv_bp_mono", model, **common_params, flatten=False, learning_rule="bp")
         elif i == 6:
-            model = vec_models.make_cifar_nonvec_conv(mono=False)
+            model = nonvec_models.make_cifar_nonvec_conv(mono=False)
             train_model(MODEL_DIR + "/cifar_nonvec_conv_df_mixed", model, **common_params, flatten=False, learning_rule="df")
         elif i == 7:
-            model = vec_models.make_cifar_nonvec_conv(mono=True)
+            model = nonvec_models.make_cifar_nonvec_conv(mono=True)
             train_model(MODEL_DIR + "/cifar_nonvec_conv_df_mono", model, **common_params, flatten=False, learning_rule="df")
         #Locally connected
         elif i == 8:
-            model = vec_models.make_cifar_nonvec_lc(mono=False)
+            model = nonvec_models.make_cifar_nonvec_lc(mono=False)
             train_model(MODEL_DIR + "/cifar_nonvec_lc_bp_mixed", model, **common_params, flatten=False, learning_rule="bp")
         elif i == 9:
-            model = vec_models.make_cifar_nonvec_lc(mono=True)
+            model = nonvec_models.make_cifar_nonvec_lc(mono=True)
             train_model(MODEL_DIR + "/cifar_nonvec_lc_bp_mono", model, **common_params, flatten=False, learning_rule="bp")
         elif i == 10:
-            model = vec_models.make_cifar_nonvec_lc(mono=False)
+            model = nonvec_models.make_cifar_nonvec_lc(mono=False)
             train_model(MODEL_DIR + "/cifar_nonvec_lc_df_mixed", model, **common_params, flatten=False, learning_rule="df")
         elif i == 11:
-            model = vec_models.make_cifar_nonvec_lc(mono=True)
+            model = nonvec_models.make_cifar_nonvec_lc(mono=True)
             train_model(MODEL_DIR + "/cifar_nonvec_lc_df_mono", model, **common_params, flatten=False, learning_rule="df")
 
 if __name__ == "__main__":
     #run_mnist_experiments(eval_iter=10, device=0, experiment_indices=list(range(0, 10)))
     #run_cifar_experiments(eval_iter=10, device=0, experiment_indices=list(range(0, 10)))
-    run_mnist_nonvec_experiments(num_epochs=101, device=0, experiment_indices=np.arange(8))
-    run_cifar_nonvec_experiments(num_epochs=101, device=0, experiment_indices=np.arange(8))
+    run_mnist_nonvec_experiments(num_epochs=101, device=0, experiment_indices=np.arange(8, 12))
+    run_cifar_nonvec_experiments(num_epochs=101, device=0, experiment_indices=np.arange(8, 12))
 
 
 
