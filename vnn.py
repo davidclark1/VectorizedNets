@@ -301,7 +301,7 @@ def set_or_add_grad(param, grad_val):
         else:
             param.grad += grad_val.detach() #again, probably don't need detach
 
-def set_model_grads(model, output, labels, learning_rule="bp", reduction="mean"):
+def set_model_grads(model, output, labels, learning_rule="bp", reduction="mean", return_g=False):
     if len(output.shape) != 2:
         raise ValueError("output.shape must be (batch_size, category_dim)")
     targets = torch.eye(output.shape[1], device=output.device)[labels]
@@ -312,9 +312,13 @@ def set_model_grads(model, output, labels, learning_rule="bp", reduction="mean")
         g /= batch_size
     if learning_rule == "bp":
         #Backprop backwards pass
+        g_vals = []
+        if return_g: g_vals.append(g)
         for i in list(range(len(model)))[::-1]:
             layer = model[i]
             g = layer.custom_backward(g, output_error)
+            if return_g: g_vals.append(g)
+        return g_vals
     elif learning_rule == "df":
         #DF backwards pass
         for i in list(range(len(model)))[::-1]:
