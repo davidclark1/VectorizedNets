@@ -93,6 +93,7 @@ class DFALayer(nn.Module):
         self.initialized = False
 
     def forward(self, input):
+        #input = input + 0.
         if not self.initialized:
             self.feedback_size = input.shape[1:]
             self.initialized = True

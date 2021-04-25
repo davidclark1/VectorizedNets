@@ -17,7 +17,10 @@ class aReLU(nn.Module):
             raise ValueError("expected number of input dimensions to be 2 (FC) or 4 (conv.)")
         mask = (input.detach()*t >= 0.).type(input.dtype)
         output = input * mask
-        return output
+        self.output = output #+ 0.
+        if hasattr(self, 'custom_retain_grads') and self.custom_retain_grads:
+            self.output.retain_grad()
+        return self.output + 0.
         
 #FC model
 
