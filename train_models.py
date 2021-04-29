@@ -15,24 +15,24 @@ import os
 
 MODEL_DIR = "experiments/models2"
 
-def load_cifar():
+def load_cifar(batch_size=128, shuffle_train=True):
     transform = torchvision.transforms.Compose(
         [torchvision.transforms.ToTensor(),
         torchvision.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
     train_set = torchvision.datasets.CIFAR10("../data", train=True, download=True, transform=transform)
     test_set = torchvision.datasets.CIFAR10("../data", train=False, download=True, transform=transform)
-    train_loader = torch.utils.data.DataLoader(train_set, batch_size=128, shuffle=True)
-    test_loader = torch.utils.data.DataLoader(test_set, batch_size=128, shuffle=False)
+    train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=shuffle_train)
+    test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False)
     return train_loader, test_loader
 
-def load_mnist():
+def load_mnist(batch_size=128):
     transform = torchvision.transforms.Compose(
         [torchvision.transforms.ToTensor(),
         torchvision.transforms.Normalize((0.5,), (0.5,))])
     train_set = torchvision.datasets.MNIST("../data", train=True, download=True, transform=transform)
     test_set = torchvision.datasets.MNIST("../data", train=False, download=True, transform=transform)
-    train_loader = torch.utils.data.DataLoader(train_set, batch_size=200, shuffle=True)
-    test_loader = torch.utils.data.DataLoader(test_set, batch_size=200, shuffle=False)
+    train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True)
+    test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False)
     return train_loader, test_loader
 
 def format_input(data, flatten, vectorized):

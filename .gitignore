@@ -7,3 +7,4 @@ figs/*
 *.pdf
 *.png
 *.pickle
+*.npz
