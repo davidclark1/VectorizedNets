@@ -101,8 +101,6 @@ class DFALayer(nn.Module):
             input.register_hook(self.hook_function)
         return input
 
-
-
 class DFAWrapper(nn.Module):
     def __init__(self, *layers):
         super().__init__()

@@ -13,8 +13,6 @@ import torch.optim as optim
 import torchvision
 import os
 
-MODEL_DIR = "experiments/models2"
-
 def load_cifar(batch_size=128, shuffle_train=True):
     transform = torchvision.transforms.Compose(
         [torchvision.transforms.ToTensor(),
@@ -25,13 +23,13 @@ def load_cifar(batch_size=128, shuffle_train=True):
     test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False)
     return train_loader, test_loader
 
-def load_mnist(batch_size=128):
+def load_mnist(batch_size=128, shuffle_train=True):
     transform = torchvision.transforms.Compose(
         [torchvision.transforms.ToTensor(),
         torchvision.transforms.Normalize((0.5,), (0.5,))])
     train_set = torchvision.datasets.MNIST("../data", train=True, download=True, transform=transform)
     test_set = torchvision.datasets.MNIST("../data", train=False, download=True, transform=transform)
-    train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True)
+    train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=shuffle_train)
     test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False)
     return train_loader, test_loader
 
@@ -166,7 +164,7 @@ def train_epoch(model, opt, train_loader, flatten, vectorized, learning_rule, de
     epoch_accuracy = num_correct / num_examples
     print("loss: {}, accuracy: {}".format(epoch_loss, epoch_accuracy))
         
-def run_mnist_vec_experiments(eval_iter=10, lr=3e-4, num_epochs=200, device="cpu", experiment_indices=None):
+def run_mnist_vec_experiments(model_dir, eval_iter, lr, num_epochs, device="cpu", experiment_indices=None):
     train_loader, test_loader = load_mnist()
     common_params = {
         "train_loader": train_loader,
@@ -182,44 +180,44 @@ def run_mnist_vec_experiments(eval_iter=10, lr=3e-4, num_epochs=200, device="cpu
         #Fully connected
         if i == 0:
             model = vec_models.make_mnist_vec_fc(mono=False)
-            train_model(MODEL_DIR + "/mnist_vec_fc_bp_mixed", model, **common_params, flatten=True, learning_rule="bp")
+            train_model(model_dir + "/mnist_vec_fc_bp_mixed", model, **common_params, flatten=True, learning_rule="bp")
         elif i == 1:
             model = vec_models.make_mnist_vec_fc(mono=True)
-            train_model(MODEL_DIR + "/mnist_vec_fc_bp_mono", model, **common_params, flatten=True, learning_rule="bp")
+            train_model(model_dir + "/mnist_vec_fc_bp_mono", model, **common_params, flatten=True, learning_rule="bp")
         elif i == 2:
             model = vec_models.make_mnist_vec_fc(mono=False)
-            train_model(MODEL_DIR + "/mnist_vec_fc_df_mixed", model, **common_params, flatten=True, learning_rule="df")
+            train_model(model_dir + "/mnist_vec_fc_df_mixed", model, **common_params, flatten=True, learning_rule="df")
         elif i == 3:
             model = vec_models.make_mnist_vec_fc(mono=True)
-            train_model(MODEL_DIR + "/mnist_vec_fc_df_mono", model, **common_params, flatten=True, learning_rule="df")
+            train_model(model_dir + "/mnist_vec_fc_df_mono", model, **common_params, flatten=True, learning_rule="df")
         #Convolutional
         elif i == 4:
             model = vec_models.make_mnist_vec_conv(mono=False)
-            train_model(MODEL_DIR + "/mnist_vec_conv_bp_mixed", model, **common_params, flatten=False, learning_rule="bp")
+            train_model(model_dir + "/mnist_vec_conv_bp_mixed", model, **common_params, flatten=False, learning_rule="bp")
         elif i == 5:
             model = vec_models.make_mnist_vec_conv(mono=True)
-            train_model(MODEL_DIR + "/mnist_vec_conv_bp_mono", model, **common_params, flatten=False, learning_rule="bp")
+            train_model(model_dir + "/mnist_vec_conv_bp_mono", model, **common_params, flatten=False, learning_rule="bp")
         elif i == 6:
             model = vec_models.make_mnist_vec_conv(mono=False)
-            train_model(MODEL_DIR + "/mnist_vec_conv_df_mixed", model, **common_params, flatten=False, learning_rule="df")
+            train_model(model_dir + "/mnist_vec_conv_df_mixed", model, **common_params, flatten=False, learning_rule="df")
         elif i == 7:
             model = vec_models.make_mnist_vec_conv(mono=True)
-            train_model(MODEL_DIR + "/mnist_vec_conv_df_mono", model, **common_params, flatten=False, learning_rule="df")
+            train_model(model_dir + "/mnist_vec_conv_df_mono", model, **common_params, flatten=False, learning_rule="df")
         #Locally connected
         elif i == 8:
             model = vec_models.make_mnist_vec_lc(mono=False)
-            train_model(MODEL_DIR + "/mnist_vec_lc_bp_mixed", model, **common_params, flatten=False, learning_rule="bp")
+            train_model(model_dir + "/mnist_vec_lc_bp_mixed", model, **common_params, flatten=False, learning_rule="bp")
         elif i == 9:
             model = vec_models.make_mnist_vec_lc(mono=True)
-            train_model(MODEL_DIR + "/mnist_vec_lc_bp_mono", model, **common_params, flatten=False, learning_rule="bp")
+            train_model(model_dir + "/mnist_vec_lc_bp_mono", model, **common_params, flatten=False, learning_rule="bp")
         elif i == 10:
             model = vec_models.make_mnist_vec_lc(mono=False)
-            train_model(MODEL_DIR + "/mnist_vec_lc_df_mixed", model, **common_params, flatten=False, learning_rule="df")
+            train_model(model_dir + "/mnist_vec_lc_df_mixed", model, **common_params, flatten=False, learning_rule="df")
         elif i == 11:
             model = vec_models.make_mnist_vec_lc(mono=True)
-            train_model(MODEL_DIR + "/mnist_vec_lc_df_mono", model, **common_params, flatten=False, learning_rule="df")
+            train_model(model_dir + "/mnist_vec_lc_df_mono", model, **common_params, flatten=False, learning_rule="df")
 
-def run_cifar_vec_experiments(eval_iter=10, lr=3e-4, num_epochs=200, device="cpu", experiment_indices=None):
+def run_cifar_vec_experiments(model_dir, eval_iter, lr, num_epochs, device="cpu", experiment_indices=None):
     train_loader, test_loader = load_cifar()
     common_params = {
         "train_loader": train_loader,
@@ -235,44 +233,44 @@ def run_cifar_vec_experiments(eval_iter=10, lr=3e-4, num_epochs=200, device="cpu
         #Fully connected
         if i == 0:
             model = vec_models.make_cifar_vec_fc(mono=False)
-            train_model(MODEL_DIR + "/cifar_vec_fc_bp_mixed", model, **common_params, flatten=True, learning_rule="bp")
+            train_model(model_dir + "/cifar_vec_fc_bp_mixed", model, **common_params, flatten=True, learning_rule="bp")
         elif i == 1:
             model = vec_models.make_cifar_vec_fc(mono=True)
-            train_model(MODEL_DIR + "/cifar_vec_fc_bp_mono", model, **common_params,flatten=True, learning_rule="bp")
+            train_model(model_dir + "/cifar_vec_fc_bp_mono", model, **common_params,flatten=True, learning_rule="bp")
         elif i == 2:
             model = vec_models.make_cifar_vec_fc(mono=False)
-            train_model(MODEL_DIR + "/cifar_vec_fc_df_mixed", model, **common_params,flatten=True, learning_rule="df")
+            train_model(model_dir + "/cifar_vec_fc_df_mixed", model, **common_params,flatten=True, learning_rule="df")
         elif i == 3:
             model = vec_models.make_cifar_vec_fc(mono=True)
-            train_model(MODEL_DIR + "/cifar_vec_fc_df_mono", model, **common_params,flatten=True, learning_rule="df")
+            train_model(model_dir + "/cifar_vec_fc_df_mono", model, **common_params,flatten=True, learning_rule="df")
         #Convolutional
         elif i == 4:
             model = vec_models.make_cifar_vec_conv(mono=False)
-            train_model(MODEL_DIR + "/cifar_vec_conv_bp_mixed", model, **common_params, flatten=False, learning_rule="bp")
+            train_model(model_dir + "/cifar_vec_conv_bp_mixed", model, **common_params, flatten=False, learning_rule="bp")
         elif i == 5:
             model = vec_models.make_cifar_vec_conv(mono=True)
-            train_model(MODEL_DIR + "/cifar_vec_conv_bp_mono", model, **common_params, flatten=False, learning_rule="bp")
+            train_model(model_dir + "/cifar_vec_conv_bp_mono", model, **common_params, flatten=False, learning_rule="bp")
         elif i == 6:
             model = vec_models.make_cifar_vec_conv(mono=False)
-            train_model(MODEL_DIR + "/cifar_vec_conv_df_mixed", model, **common_params, flatten=False, learning_rule="df")
+            train_model(model_dir + "/cifar_vec_conv_df_mixed", model, **common_params, flatten=False, learning_rule="df")
         elif i == 7:
             model = vec_models.make_cifar_vec_conv(mono=True)
-            train_model(MODEL_DIR + "/cifar_vec_conv_df_mono", model, **common_params, flatten=False, learning_rule="df")
+            train_model(model_dir + "/cifar_vec_conv_df_mono", model, **common_params, flatten=False, learning_rule="df")
         #Locally connected
         elif i == 8:
             model = vec_models.make_cifar_vec_lc(mono=False)
-            train_model(MODEL_DIR + "/cifar_vec_lc_bp_mixed", model, **common_params, flatten=False, learning_rule="bp")
+            train_model(model_dir + "/cifar_vec_lc_bp_mixed", model, **common_params, flatten=False, learning_rule="bp")
         elif i == 9:
             model = vec_models.make_cifar_vec_lc(mono=True)
-            train_model(MODEL_DIR + "/cifar_vec_lc_bp_mono", model, **common_params, flatten=False, learning_rule="bp")
+            train_model(model_dir + "/cifar_vec_lc_bp_mono", model, **common_params, flatten=False, learning_rule="bp")
         elif i == 10:
             model = vec_models.make_cifar_vec_lc(mono=False)
-            train_model(MODEL_DIR + "/cifar_vec_lc_df_mixed", model, **common_params, flatten=False, learning_rule="df")
+            train_model(model_dir + "/cifar_vec_lc_df_mixed", model, **common_params, flatten=False, learning_rule="df")
         elif i == 11:
             model = vec_models.make_cifar_vec_lc(mono=True)
-            train_model(MODEL_DIR + "/cifar_vec_lc_df_mono", model, **common_params, flatten=False, learning_rule="df")
+            train_model(model_dir + "/cifar_vec_lc_df_mono", model, **common_params, flatten=False, learning_rule="df")
 
-def run_mnist_nonvec_experiments(eval_iter=10, lr=3e-4, num_epochs=200, device="cpu", experiment_indices=None):
+def run_mnist_nonvec_experiments(model_dir, eval_iter, lr, num_epochs, device="cpu", experiment_indices=None):
     train_loader, test_loader = load_mnist()
     common_params = {
         "train_loader": train_loader,
@@ -288,44 +286,44 @@ def run_mnist_nonvec_experiments(eval_iter=10, lr=3e-4, num_epochs=200, device="
         #Fully connected
         if i == 0:
             model = nonvec_models.make_mnist_nonvec_fc(mono=False)
-            train_model(MODEL_DIR + "/mnist_nonvec_fc_bp_mixed", model, **common_params, flatten=True, learning_rule="bp")
+            train_model(model_dir + "/mnist_nonvec_fc_bp_mixed", model, **common_params, flatten=True, learning_rule="bp")
         elif i == 1:
             model = nonvec_models.make_mnist_nonvec_fc(mono=True)
-            train_model(MODEL_DIR + "/mnist_nonvec_fc_bp_mono", model, **common_params, flatten=True, learning_rule="bp")
+            train_model(model_dir + "/mnist_nonvec_fc_bp_mono", model, **common_params, flatten=True, learning_rule="bp")
         elif i == 2:
             model = nonvec_models.make_mnist_nonvec_fc(mono=False)
-            train_model(MODEL_DIR + "/mnist_nonvec_fc_df_mixed", model, **common_params, flatten=True, learning_rule="df")
+            train_model(model_dir + "/mnist_nonvec_fc_df_mixed", model, **common_params, flatten=True, learning_rule="df")
         elif i == 3:
             model = nonvec_models.make_mnist_nonvec_fc(mono=True)
-            train_model(MODEL_DIR + "/mnist_nonvec_fc_df_mono", model, **common_params, flatten=True, learning_rule="df")
+            train_model(model_dir + "/mnist_nonvec_fc_df_mono", model, **common_params, flatten=True, learning_rule="df")
         #Convolutional
         elif i == 4:
             model = nonvec_models.make_mnist_nonvec_conv(mono=False)
-            train_model(MODEL_DIR + "/mnist_nonvec_conv_bp_mixed", model, **common_params, flatten=False, learning_rule="bp")
+            train_model(model_dir + "/mnist_nonvec_conv_bp_mixed", model, **common_params, flatten=False, learning_rule="bp")
         elif i == 5:
             model = nonvec_models.make_mnist_nonvec_conv(mono=True)
-            train_model(MODEL_DIR + "/mnist_nonvec_conv_bp_mono", model, **common_params, flatten=False, learning_rule="bp")
+            train_model(model_dir + "/mnist_nonvec_conv_bp_mono", model, **common_params, flatten=False, learning_rule="bp")
         elif i == 6:
             model = nonvec_models.make_mnist_nonvec_conv(mono=False)
-            train_model(MODEL_DIR + "/mnist_nonvec_conv_df_mixed", model, **common_params, flatten=False, learning_rule="df")
+            train_model(model_dir + "/mnist_nonvec_conv_df_mixed", model, **common_params, flatten=False, learning_rule="df")
         elif i == 7:
             model = nonvec_models.make_mnist_nonvec_conv(mono=True)
-            train_model(MODEL_DIR + "/mnist_nonvec_conv_df_mono", model, **common_params, flatten=False, learning_rule="df")
+            train_model(model_dir + "/mnist_nonvec_conv_df_mono", model, **common_params, flatten=False, learning_rule="df")
         #Locally connected
         elif i == 8:
             model = nonvec_models.make_mnist_nonvec_lc(mono=False)
-            train_model(MODEL_DIR + "/mnist_nonvec_lc_bp_mixed", model, **common_params, flatten=False, learning_rule="bp")
+            train_model(model_dir + "/mnist_nonvec_lc_bp_mixed", model, **common_params, flatten=False, learning_rule="bp")
         elif i == 9:
             model = nonvec_models.make_mnist_nonvec_lc(mono=True)
-            train_model(MODEL_DIR + "/mnist_nonvec_lc_bp_mono", model, **common_params, flatten=False, learning_rule="bp")
+            train_model(model_dir + "/mnist_nonvec_lc_bp_mono", model, **common_params, flatten=False, learning_rule="bp")
         elif i == 10:
             model = nonvec_models.make_mnist_nonvec_lc(mono=False)
-            train_model(MODEL_DIR + "/mnist_nonvec_lc_df_mixed", model, **common_params, flatten=False, learning_rule="df")
+            train_model(model_dir + "/mnist_nonvec_lc_df_mixed", model, **common_params, flatten=False, learning_rule="df")
         elif i == 11:
             model = nonvec_models.make_mnist_nonvec_lc(mono=True)
-            train_model(MODEL_DIR + "/mnist_nonvec_lc_df_mono", model, **common_params, flatten=False, learning_rule="df")
+            train_model(model_dir + "/mnist_nonvec_lc_df_mono", model, **common_params, flatten=False, learning_rule="df")
 
-def run_cifar_nonvec_experiments(eval_iter=10, lr=3e-4, num_epochs=200, device="cpu", experiment_indices=None):
+def run_cifar_nonvec_experiments(model_dir, eval_iter, lr, num_epochs, device="cpu", experiment_indices=None):
     train_loader, test_loader = load_cifar()
     common_params = {
         "train_loader": train_loader,
@@ -341,48 +339,50 @@ def run_cifar_nonvec_experiments(eval_iter=10, lr=3e-4, num_epochs=200, device="
         #Fully connected
         if i == 0:
             model = nonvec_models.make_cifar_nonvec_fc(mono=False)
-            train_model(MODEL_DIR + "/cifar_nonvec_fc_bp_mixed", model, **common_params, flatten=True, learning_rule="bp")
+            train_model(model_dir + "/cifar_nonvec_fc_bp_mixed", model, **common_params, flatten=True, learning_rule="bp")
         elif i == 1:
             model = nonvec_models.make_cifar_nonvec_fc(mono=True)
-            train_model(MODEL_DIR + "/cifar_nonvec_fc_bp_mono", model, **common_params,flatten=True, learning_rule="bp")
+            train_model(model_dir + "/cifar_nonvec_fc_bp_mono", model, **common_params,flatten=True, learning_rule="bp")
         elif i == 2:
             model = nonvec_models.make_cifar_nonvec_fc(mono=False)
-            train_model(MODEL_DIR + "/cifar_nonvec_fc_df_mixed", model, **common_params,flatten=True, learning_rule="df")
+            train_model(model_dir + "/cifar_nonvec_fc_df_mixed", model, **common_params,flatten=True, learning_rule="df")
         elif i == 3:
             model = nonvec_models.make_cifar_nonvec_fc(mono=True)
-            train_model(MODEL_DIR + "/cifar_nonvec_fc_df_mono", model, **common_params,flatten=True, learning_rule="df")
+            train_model(model_dir + "/cifar_nonvec_fc_df_mono", model, **common_params,flatten=True, learning_rule="df")
         #Convolutional
         elif i == 4:
             model = nonvec_models.make_cifar_nonvec_conv(mono=False)
-            train_model(MODEL_DIR + "/cifar_nonvec_conv_bp_mixed", model, **common_params, flatten=False, learning_rule="bp")
+            train_model(model_dir + "/cifar_nonvec_conv_bp_mixed", model, **common_params, flatten=False, learning_rule="bp")
         elif i == 5:
             model = nonvec_models.make_cifar_nonvec_conv(mono=True)
-            train_model(MODEL_DIR + "/cifar_nonvec_conv_bp_mono", model, **common_params, flatten=False, learning_rule="bp")
+            train_model(model_dir + "/cifar_nonvec_conv_bp_mono", model, **common_params, flatten=False, learning_rule="bp")
         elif i == 6:
             model = nonvec_models.make_cifar_nonvec_conv(mono=False)
-            train_model(MODEL_DIR + "/cifar_nonvec_conv_df_mixed", model, **common_params, flatten=False, learning_rule="df")
+            train_model(model_dir + "/cifar_nonvec_conv_df_mixed", model, **common_params, flatten=False, learning_rule="df")
         elif i == 7:
             model = nonvec_models.make_cifar_nonvec_conv(mono=True)
-            train_model(MODEL_DIR + "/cifar_nonvec_conv_df_mono", model, **common_params, flatten=False, learning_rule="df")
+            train_model(model_dir + "/cifar_nonvec_conv_df_mono", model, **common_params, flatten=False, learning_rule="df")
         #Locally connected
         elif i == 8:
             model = nonvec_models.make_cifar_nonvec_lc(mono=False)
-            train_model(MODEL_DIR + "/cifar_nonvec_lc_bp_mixed", model, **common_params, flatten=False, learning_rule="bp")
+            train_model(model_dir + "/cifar_nonvec_lc_bp_mixed", model, **common_params, flatten=False, learning_rule="bp")
         elif i == 9:
             model = nonvec_models.make_cifar_nonvec_lc(mono=True)
-            train_model(MODEL_DIR + "/cifar_nonvec_lc_bp_mono", model, **common_params, flatten=False, learning_rule="bp")
+            train_model(model_dir + "/cifar_nonvec_lc_bp_mono", model, **common_params, flatten=False, learning_rule="bp")
         elif i == 10:
             model = nonvec_models.make_cifar_nonvec_lc(mono=False)
-            train_model(MODEL_DIR + "/cifar_nonvec_lc_df_mixed", model, **common_params, flatten=False, learning_rule="df")
+            train_model(model_dir + "/cifar_nonvec_lc_df_mixed", model, **common_params, flatten=False, learning_rule="df")
         elif i == 11:
             model = nonvec_models.make_cifar_nonvec_lc(mono=True)
-            train_model(MODEL_DIR + "/cifar_nonvec_lc_df_mono", model, **common_params, flatten=False, learning_rule="df")
+            train_model(model_dir + "/cifar_nonvec_lc_df_mono", model, **common_params, flatten=False, learning_rule="df")
 
 if __name__ == "__main__":
-    #run_mnist_experiments(eval_iter=10, device=0, experiment_indices=list(range(0, 10)))
-    #run_cifar_experiments(eval_iter=10, device=0, experiment_indices=list(range(0, 10)))
-    run_mnist_nonvec_experiments(num_epochs=101, device=0, experiment_indices=np.arange(8, 12))
-    run_cifar_nonvec_experiments(num_epochs=101, device=0, experiment_indices=np.arange(8, 12))
+    for i in range(5):
+        model_dir = 'experiments/models_' + str(i)
+        run_mnist_vec_experiments(model_dir, eval_iter=10, lr=3e-4, num_epochs=200, device=0)
+        run_cifar_vec_experiments(model_dir, eval_iter=10, lr=3e-4, num_epochs=200, device=0)
+        run_mnist_nonvec_experiments(model_dir, eval_iter=10, lr=3e-4, num_epochs=200, device=0)
+        run_cifar_nonvec_experiments(model_dir, eval_iter=10, lr=3e-4, num_epochs=200, device=0)
 
 
 
