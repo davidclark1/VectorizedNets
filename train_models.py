@@ -117,6 +117,7 @@ def train_model(snapshot_dir, model, train_loader, test_loader, eval_iter, lr, n
     flatten, vectorized, learning_rule, device):
     model = model.to(device)
     opt = optim.Adam(model.parameters(), lr=lr)
+    _ = model(torch.randn(128, 3, 32, 32).to(device), learning_rule='df') #TODO: remove me!
     snapshot_epoch, just_restarted, done_training = restart_from_snapshot(snapshot_dir, model, opt)
     if done_training or snapshot_epoch >= num_epochs:
         print("Loaded model already done training")
@@ -377,12 +378,15 @@ def run_cifar_nonvec_experiments(model_dir, eval_iter, lr, num_epochs, device="c
             train_model(model_dir + "/cifar_nonvec_lc_df_mono", model, **common_params, flatten=False, learning_rule="df")
 
 if __name__ == "__main__":
-    for i in range(5):
-        model_dir = 'experiments/models_' + str(i)
-        run_mnist_vec_experiments(model_dir, eval_iter=10, lr=3e-4, num_epochs=200, device=0)
-        run_cifar_vec_experiments(model_dir, eval_iter=10, lr=3e-4, num_epochs=200, device=0)
-        run_mnist_nonvec_experiments(model_dir, eval_iter=10, lr=3e-4, num_epochs=200, device=0)
-        run_cifar_nonvec_experiments(model_dir, eval_iter=10, lr=3e-4, num_epochs=200, device=0)
+    #for i in range(1, 5):
+    #i = 1
+    #model_dir = 'experiments/models_' + str(i)
+    print('Here')
+    model_dir = '/media/davidclark/DATA/VectorizedNets/models_2'
+    #run_mnist_vec_experiments(model_dir, eval_iter=10, lr=3e-4, num_epochs=200, device=0)
+    #run_cifar_vec_experiments(model_dir, eval_iter=10, lr=3e-4, num_epochs=200, device=0)
+    #run_mnist_nonvec_experiments(model_dir, eval_iter=10, lr=3e-4, num_epochs=200, device=0)
+    run_cifar_nonvec_experiments(model_dir, eval_iter=10, lr=3e-4, num_epochs=200, device=0, experiment_indices=np.array([11]))
 
 
 
