@@ -1,3 +1,9 @@
+"""
+Uses code from:
+https://github.com/lightonai/dfa-scales-to-modern-deep-learning/tree/master/TinyDFA/tinydfa
+(Direct Feedback Alignment Scales to Modern Deep Learning Tasks and Architectures)
+"""
+
 import local2d
 import numpy as np
 import torch

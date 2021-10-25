@@ -5,6 +5,8 @@ This repository contains code for training the models and generating the figures
 
 ### Main dependencies:  
 * PyTorch
-* NumPy 
+* NumPy
 
-Contact: David G. Clark <dgc2138@cumc.columbia.edu>  
+To implement direct feedback alignment, we use code written for the paper [Direct Feedback Alignment Scales to Modern Deep Learning Tasks and Architectures](https://github.com/lightonai/dfa-scales-to-modern-deep-learning).
+
+Contact: David G. Clark <dgc2138@cumc.columbia.edu>
